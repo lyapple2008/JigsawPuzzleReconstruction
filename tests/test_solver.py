@@ -37,3 +37,15 @@ def test_solver_5x5_accuracy() -> None:
     """5x5 puzzle should reconstruct with high accuracy."""
     acc = _run_case(5)
     assert acc > 0.8
+
+
+def test_solver_8x8_accuracy() -> None:
+    """8x8 puzzle should keep strong reconstruction accuracy."""
+    acc = _run_case(8)
+    assert acc > 0.9
+
+
+def test_solver_10x10_accuracy() -> None:
+    """10x10 puzzle should keep strong reconstruction accuracy."""
+    acc = _run_case(10)
+    assert acc > 0.9
