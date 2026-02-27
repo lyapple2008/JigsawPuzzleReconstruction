@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
@@ -28,6 +28,19 @@ class SolverConfig:
     sa_initial_temp_ratio: float = 0.08
     sa_cooling: float = 0.995
     border_bonus_weight: float = 0.15
+    mutual_neighbor_bonus_weight: float = 0.12
+    component_bonus_weight: float = 0.08
+    loop_penalty_weight: float = 0.10
+
+
+@dataclass
+class StructuralPriors:
+    """Precomputed structural hints for global-consistency-biased search."""
+
+    preferred_right: Dict[int, Set[int]]
+    preferred_down: Dict[int, Set[int]]
+    component_id: np.ndarray
+    component_size: np.ndarray
 
 
 class JigsawSolver:
@@ -48,12 +61,15 @@ class JigsawSolver:
 
         cost = cost_matrix if cost_matrix is not None else self.matcher.build_cost_matrix(patches)
         border_scores = self._compute_border_scores(cost)
-        grid = self._build_best_initial_solution(cost, border_scores)
+        priors = self._build_structural_priors(cost)
+        grid = self._build_best_initial_solution(cost, border_scores, priors)
         if self.config.local_opt_iters > 0:
             grid = self._local_swap_optimize(grid, cost, self.config.local_opt_iters)
         return grid
 
-    def _build_best_initial_solution(self, cost: np.ndarray, border_scores: np.ndarray) -> np.ndarray:
+    def _build_best_initial_solution(
+        self, cost: np.ndarray, border_scores: np.ndarray, priors: StructuralPriors
+    ) -> np.ndarray:
         """Generate one random-seeded solution and optionally improve with multi-start."""
         rows, cols = self.config.rows, self.config.cols
         n = rows * cols
@@ -62,7 +78,7 @@ class JigsawSolver:
         first_start = start_pieces[0]
         if self.config.use_beam_init:
             best_grid = self._beam_initial_solution(
-                cost, border_scores=border_scores, start_piece=first_start
+                cost, border_scores=border_scores, priors=priors, start_piece=first_start
             )
         else:
             best_grid = self._greedy_initial_solution(cost, start_piece=first_start)
@@ -74,7 +90,7 @@ class JigsawSolver:
         for start_piece in start_pieces[1:]:
             if self.config.use_beam_init:
                 candidate = self._beam_initial_solution(
-                    cost, border_scores=border_scores, start_piece=start_piece
+                    cost, border_scores=border_scores, priors=priors, start_piece=start_piece
                 )
             else:
                 candidate = self._greedy_initial_solution(cost, start_piece=start_piece)
@@ -151,6 +167,62 @@ class JigsawSolver:
             scores = scores - mu
         return scores
 
+    def _build_structural_priors(self, cost: np.ndarray) -> StructuralPriors:
+        """Build mutual-neighbor graph priors and weak connected components."""
+        n = cost.shape[0]
+
+        right_best = np.argmin(cost[:, :, Direction.RIGHT], axis=1)
+        left_best = np.argmin(cost[:, :, Direction.RIGHT], axis=0)
+        down_best = np.argmin(cost[:, :, Direction.DOWN], axis=1)
+        up_best = np.argmin(cost[:, :, Direction.DOWN], axis=0)
+
+        preferred_right: Dict[int, Set[int]] = {i: set() for i in range(n)}
+        preferred_down: Dict[int, Set[int]] = {i: set() for i in range(n)}
+        graph: List[Set[int]] = [set() for _ in range(n)]
+
+        for i in range(n):
+            j = int(right_best[i])
+            if int(left_best[j]) == i:
+                preferred_right[i].add(j)
+                graph[i].add(j)
+                graph[j].add(i)
+
+            d = int(down_best[i])
+            if int(up_best[d]) == i:
+                preferred_down[i].add(d)
+                graph[i].add(d)
+                graph[d].add(i)
+
+        component_id = np.full(n, -1, dtype=np.int32)
+        component_sizes: List[int] = []
+        cid = 0
+        for i in range(n):
+            if component_id[i] != -1:
+                continue
+            stack = [i]
+            component_id[i] = cid
+            count = 0
+            while stack:
+                cur = stack.pop()
+                count += 1
+                for nxt in graph[cur]:
+                    if component_id[nxt] == -1:
+                        component_id[nxt] = cid
+                        stack.append(nxt)
+            component_sizes.append(count)
+            cid += 1
+
+        component_size = np.zeros(n, dtype=np.float64)
+        for i in range(n):
+            component_size[i] = float(component_sizes[int(component_id[i])])
+
+        return StructuralPriors(
+            preferred_right=preferred_right,
+            preferred_down=preferred_down,
+            component_id=component_id,
+            component_size=component_size,
+        )
+
     def _boundary_bonus(
         self, border_scores: np.ndarray, piece: int, r: int, c: int, rows: int, cols: int
     ) -> float:
@@ -167,7 +239,7 @@ class JigsawSolver:
         return self.config.border_bonus_weight * bonus
 
     def _beam_initial_solution(
-        self, cost: np.ndarray, border_scores: np.ndarray, start_piece: int
+        self, cost: np.ndarray, border_scores: np.ndarray, priors: StructuralPriors, start_piece: int
     ) -> np.ndarray:
         """Build initial arrangement with beam search over row-major placement."""
         rows, cols = self.config.rows, self.config.cols
@@ -181,7 +253,7 @@ class JigsawSolver:
             r, c = divmod(pos, cols)
             expanded: List[Tuple[float, np.ndarray, Set[int]]] = []
             for score, grid, unused in beams:
-                candidates = self._rank_candidates(cost, border_scores, grid, unused, r, c)
+                candidates = self._rank_candidates(cost, border_scores, priors, grid, unused, r, c)
                 for piece, local_cost in candidates[: self.config.beam_candidate_pool]:
                     next_grid = grid.copy()
                     next_grid[r, c] = piece
@@ -200,6 +272,7 @@ class JigsawSolver:
         self,
         cost: np.ndarray,
         border_scores: np.ndarray,
+        priors: StructuralPriors,
         grid: np.ndarray,
         unused: Set[int],
         r: int,
@@ -209,6 +282,7 @@ class JigsawSolver:
         scores: List[Tuple[int, float]] = []
         up = int(grid[r - 1, c]) if r > 0 else None
         left = int(grid[r, c - 1]) if c > 0 else None
+        up_left = int(grid[r - 1, c - 1]) if r > 0 and c > 0 else None
 
         rows, cols = grid.shape
         for piece in unused:
@@ -218,9 +292,52 @@ class JigsawSolver:
             if left is not None:
                 value += self.config.row_fill_left_weight * float(cost[left, piece, Direction.RIGHT])
             value -= self._boundary_bonus(border_scores, piece, r, c, rows, cols)
+            value -= self._mutual_bonus(priors, left, up, piece)
+            value -= self._component_bonus(priors, left, up, piece)
+            value += self._loop_penalty(cost, up_left, up, left, piece)
             scores.append((piece, value))
         scores.sort(key=lambda x: x[1])
         return scores
+
+    def _mutual_bonus(
+        self, priors: StructuralPriors, left: Optional[int], up: Optional[int], piece: int
+    ) -> float:
+        """Reward candidates that match mutual best-neighbor relations."""
+        bonus = 0.0
+        if left is not None and piece in priors.preferred_right[left]:
+            bonus += 1.0
+        if up is not None and piece in priors.preferred_down[up]:
+            bonus += 1.0
+        return self.config.mutual_neighbor_bonus_weight * bonus
+
+    def _component_bonus(
+        self, priors: StructuralPriors, left: Optional[int], up: Optional[int], piece: int
+    ) -> float:
+        """Reward local placements that keep strongly connected components contiguous."""
+        bonus = 0.0
+        pid = int(priors.component_id[piece])
+        psize = float(priors.component_size[piece])
+        if left is not None and int(priors.component_id[left]) == pid:
+            bonus += min(1.0, psize / 4.0)
+        if up is not None and int(priors.component_id[up]) == pid:
+            bonus += min(1.0, psize / 4.0)
+        return self.config.component_bonus_weight * bonus
+
+    def _loop_penalty(
+        self,
+        cost: np.ndarray,
+        up_left: Optional[int],
+        up: Optional[int],
+        left: Optional[int],
+        piece: int,
+    ) -> float:
+        """Penalize local 2x2 cycles whose two paths disagree strongly."""
+        if up_left is None or up is None or left is None:
+            return 0.0
+
+        path_a = float(cost[up_left, up, Direction.RIGHT] + cost[up, piece, Direction.DOWN])
+        path_b = float(cost[up_left, left, Direction.DOWN] + cost[left, piece, Direction.RIGHT])
+        return self.config.loop_penalty_weight * abs(path_a - path_b)
 
     def _local_swap_optimize(self, grid: np.ndarray, cost: np.ndarray, iterations: int) -> np.ndarray:
         """Improve solution with simulated annealing swaps to escape local minima."""

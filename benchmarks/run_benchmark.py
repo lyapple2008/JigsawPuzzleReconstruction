@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List
 
 import sys
+import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -24,9 +25,16 @@ from jigsaw.utils import generate_natural_like_image, shuffle_patches
 @dataclass
 class BenchmarkRow:
     grid: str
+    seeds: int
+    pos_acc_mean: float
+    pos_acc_min: float
+    nbr_acc_mean: float
+    nbr_acc_min: float
+    total_cost_mean: float
     position_accuracy: float
     neighbor_accuracy: float
     total_cost: float
+    runtime_mean_sec: float
     runtime_sec: float
 
 
@@ -56,10 +64,41 @@ def run_case(grid_size: int, seed: int, local_opt_iters: int) -> BenchmarkRow:
     result = evaluator.evaluate(solved, shuffled, cost)
     return BenchmarkRow(
         grid=f"{grid_size}x{grid_size}",
+        seeds=1,
+        pos_acc_mean=result.position_accuracy,
+        pos_acc_min=result.position_accuracy,
+        nbr_acc_mean=result.neighbor_accuracy,
+        nbr_acc_min=result.neighbor_accuracy,
+        total_cost_mean=result.total_cost,
         position_accuracy=result.position_accuracy,
         neighbor_accuracy=result.neighbor_accuracy,
         total_cost=result.total_cost,
+        runtime_mean_sec=runtime_sec,
         runtime_sec=runtime_sec,
+    )
+
+
+def run_case_multi_seed(
+    grid_size: int, seeds: List[int], local_opt_iters: int
+) -> BenchmarkRow:
+    rows = [run_case(grid_size, seed=seed, local_opt_iters=local_opt_iters) for seed in seeds]
+    pos = np.array([r.position_accuracy for r in rows], dtype=np.float64)
+    nbr = np.array([r.neighbor_accuracy for r in rows], dtype=np.float64)
+    cst = np.array([r.total_cost for r in rows], dtype=np.float64)
+    rt = np.array([r.runtime_sec for r in rows], dtype=np.float64)
+    return BenchmarkRow(
+        grid=f"{grid_size}x{grid_size}",
+        seeds=len(seeds),
+        pos_acc_mean=float(np.mean(pos)),
+        pos_acc_min=float(np.min(pos)),
+        nbr_acc_mean=float(np.mean(nbr)),
+        nbr_acc_min=float(np.min(nbr)),
+        total_cost_mean=float(np.mean(cst)),
+        position_accuracy=float(pos[0]),
+        neighbor_accuracy=float(nbr[0]),
+        total_cost=float(cst[0]),
+        runtime_mean_sec=float(np.mean(rt)),
+        runtime_sec=float(rt[0]),
     )
 
 
@@ -74,6 +113,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument(
+        "--num-seeds",
+        type=int,
+        default=1,
+        help="Number of seeds to evaluate per grid (default: 1)",
+    )
+    parser.add_argument(
         "--local-opt-iters",
         type=int,
         default=1000,
@@ -84,23 +129,31 @@ def parse_args() -> argparse.Namespace:
 
 def print_table(rows: List[BenchmarkRow]) -> None:
     header = (
-        f"{'Grid':<8}{'PosAcc':>10}{'NbrAcc':>10}{'TotalCost':>14}{'Runtime(s)':>12}"
+        f"{'Grid':<8}{'Seeds':>7}{'PosMean':>10}{'PosMin':>10}"
+        f"{'NbrMean':>10}{'NbrMin':>10}{'CostMean':>12}{'RtMean(s)':>11}"
     )
     print(header)
     print("-" * len(header))
     for row in rows:
         print(
             f"{row.grid:<8}"
-            f"{row.position_accuracy:>10.4f}"
-            f"{row.neighbor_accuracy:>10.4f}"
-            f"{row.total_cost:>14.2f}"
-            f"{row.runtime_sec:>12.4f}"
+            f"{row.seeds:>7d}"
+            f"{row.pos_acc_mean:>10.4f}"
+            f"{row.pos_acc_min:>10.4f}"
+            f"{row.nbr_acc_mean:>10.4f}"
+            f"{row.nbr_acc_min:>10.4f}"
+            f"{row.total_cost_mean:>12.2f}"
+            f"{row.runtime_mean_sec:>11.4f}"
         )
 
 
 def main() -> None:
     args = parse_args()
-    rows = [run_case(size, seed=args.seed, local_opt_iters=args.local_opt_iters) for size in args.sizes]
+    seeds = [args.seed + i for i in range(args.num_seeds)]
+    rows = [
+        run_case_multi_seed(size, seeds=seeds, local_opt_iters=args.local_opt_iters)
+        for size in args.sizes
+    ]
     print_table(rows)
 
 
