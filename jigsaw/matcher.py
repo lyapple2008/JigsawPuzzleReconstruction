@@ -25,11 +25,13 @@ class EdgeMatcher:
         strip_width: int = 3,
         color_weight: float = 0.85,
         gradient_weight: float = 0.15,
+        seam_ignore: int = 1,
     ) -> None:
         """Initialize matcher parameters for robust edge comparison."""
         self.strip_width = max(1, int(strip_width))
         self.color_weight = float(color_weight)
         self.gradient_weight = float(gradient_weight)
+        self.seam_ignore = max(0, int(seam_ignore))
 
     def _get_strip(self, patch: Patch, side: str) -> np.ndarray:
         """Return edge-adjacent strip with seam-aligned orientation."""
@@ -38,14 +40,32 @@ class EdgeMatcher:
         width = min(self.strip_width, h if side in {"top", "bottom"} else w)
         if side == "right":
             # Flip so seam is at index 0 and inward direction is positive.
-            return np.flip(img[:, w - width : w, :], axis=1)
+            strip = np.flip(img[:, w - width : w, :], axis=1)
+            return self._trim_seam_axis(strip, axis=1)
         if side == "left":
-            return img[:, :width, :]
+            strip = img[:, :width, :]
+            return self._trim_seam_axis(strip, axis=1)
         if side == "bottom":
-            return np.flip(img[h - width : h, :, :], axis=0)
+            strip = np.flip(img[h - width : h, :, :], axis=0)
+            return self._trim_seam_axis(strip, axis=0)
         if side == "top":
-            return img[:width, :, :]
+            strip = img[:width, :, :]
+            return self._trim_seam_axis(strip, axis=0)
         raise ValueError(f"Unsupported side: {side}")
+
+    def _trim_seam_axis(self, strip: np.ndarray, axis: int) -> np.ndarray:
+        """Drop a few seam-nearest pixels to reduce visible-gap artifacts."""
+        if self.seam_ignore <= 0:
+            return strip
+        if axis == 1:
+            if strip.shape[1] - self.seam_ignore < 1:
+                return strip
+            return strip[:, self.seam_ignore :, :]
+        if axis == 0:
+            if strip.shape[0] - self.seam_ignore < 1:
+                return strip
+            return strip[self.seam_ignore :, :, :]
+        return strip
 
     @staticmethod
     def _safe_mean_sq(diff: np.ndarray) -> float:
@@ -69,15 +89,17 @@ class EdgeMatcher:
         b = patch_b.image.astype(np.float32)
 
         if direction == Direction.RIGHT:
-            if a.shape[1] < 2 or b.shape[1] < 2:
+            idx = self.seam_ignore
+            if a.shape[1] <= idx + 1 or b.shape[1] <= idx + 1:
                 return 0.0
-            grad_a = a[:, -1, :] - a[:, -2, :]
-            grad_b = b[:, 1, :] - b[:, 0, :]
+            grad_a = a[:, -(idx + 1), :] - a[:, -(idx + 2), :]
+            grad_b = b[:, idx + 1, :] - b[:, idx, :]
         elif direction == Direction.DOWN:
-            if a.shape[0] < 2 or b.shape[0] < 2:
+            idx = self.seam_ignore
+            if a.shape[0] <= idx + 1 or b.shape[0] <= idx + 1:
                 return 0.0
-            grad_a = a[-1, :, :] - a[-2, :, :]
-            grad_b = b[1, :, :] - b[0, :, :]
+            grad_a = a[-(idx + 1), :, :] - a[-(idx + 2), :, :]
+            grad_b = b[idx + 1, :, :] - b[idx, :, :]
         else:
             raise ValueError(f"Unsupported direction: {direction}")
 
