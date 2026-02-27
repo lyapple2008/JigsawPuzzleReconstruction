@@ -20,7 +20,7 @@ from jigsaw.gap_splitter import split_with_gap_aware
 from jigsaw.matcher import EdgeMatcher
 from jigsaw.solver import JigsawSolver, SolverConfig
 from jigsaw.splitter import Patch, PuzzleSplitter
-from jigsaw.utils import generate_natural_like_image, shuffle_patches
+from jigsaw.utils import generate_hard_repetitive_image, generate_natural_like_image, shuffle_patches
 
 
 @dataclass
@@ -39,9 +39,22 @@ class BenchmarkRow:
     runtime_sec: float
 
 
-def run_case(grid_size: int, seed: int, local_opt_iters: int, use_position_prior: bool) -> BenchmarkRow:
+def _make_image(size: int, seed: int, dataset: str) -> np.ndarray:
+    if dataset == "hard":
+        return generate_hard_repetitive_image(size=size, seed=seed)
+    return generate_natural_like_image(size=size, seed=seed)
+
+
+def run_case(
+    grid_size: int,
+    seed: int,
+    local_opt_iters: int,
+    use_position_prior: bool,
+    auto_position_prior: bool,
+    dataset: str,
+) -> BenchmarkRow:
     image_size = grid_size * 60
-    image = generate_natural_like_image(size=image_size, seed=seed)
+    image = _make_image(image_size, seed=seed, dataset=dataset)
     splitter = PuzzleSplitter()
     patches = splitter.split(image, grid_size, grid_size)
     shuffled, _ = shuffle_patches(patches, seed=seed)
@@ -55,6 +68,7 @@ def run_case(grid_size: int, seed: int, local_opt_iters: int, use_position_prior
             seed=seed,
             local_opt_iters=local_opt_iters,
             use_position_prior=use_position_prior,
+            auto_position_prior=auto_position_prior,
         )
     )
 
@@ -65,7 +79,7 @@ def run_case(grid_size: int, seed: int, local_opt_iters: int, use_position_prior
     evaluator = PuzzleEvaluator()
     result = evaluator.evaluate(solved, shuffled, cost)
     return BenchmarkRow(
-        grid=f"{grid_size}x{grid_size}",
+        grid=f"{grid_size}x{grid_size}[{dataset}]",
         seeds=1,
         pos_acc_mean=result.position_accuracy,
         pos_acc_min=result.position_accuracy,
@@ -99,10 +113,16 @@ def _compose_with_uniform_gap(
 
 
 def run_case_with_gap(
-    grid_size: int, seed: int, local_opt_iters: int, gap: int, use_position_prior: bool
+    grid_size: int,
+    seed: int,
+    local_opt_iters: int,
+    gap: int,
+    use_position_prior: bool,
+    auto_position_prior: bool,
+    dataset: str,
 ) -> BenchmarkRow:
     image_size = grid_size * 60
-    image = generate_natural_like_image(size=image_size, seed=seed)
+    image = _make_image(image_size, seed=seed, dataset=dataset)
     splitter = PuzzleSplitter()
     patches = splitter.split(image, grid_size, grid_size)
     shuffled, _ = shuffle_patches(patches, seed=seed)
@@ -124,6 +144,7 @@ def run_case_with_gap(
             seed=seed,
             local_opt_iters=local_opt_iters,
             use_position_prior=use_position_prior,
+            auto_position_prior=auto_position_prior,
         )
     )
 
@@ -134,7 +155,7 @@ def run_case_with_gap(
     evaluator = PuzzleEvaluator()
     result = evaluator.evaluate(solved, labeled, cost)
     return BenchmarkRow(
-        grid=f"{grid_size}x{grid_size}(gap={gap})",
+        grid=f"{grid_size}x{grid_size}(gap={gap})[{dataset}]",
         seeds=1,
         pos_acc_mean=result.position_accuracy,
         pos_acc_min=result.position_accuracy,
@@ -155,6 +176,8 @@ def run_case_multi_seed(
     local_opt_iters: int,
     gap: int,
     use_position_prior: bool,
+    auto_position_prior: bool,
+    dataset: str,
 ) -> BenchmarkRow:
     if gap > 0:
         rows = [
@@ -164,10 +187,12 @@ def run_case_multi_seed(
                 local_opt_iters=local_opt_iters,
                 gap=gap,
                 use_position_prior=use_position_prior,
+                auto_position_prior=auto_position_prior,
+                dataset=dataset,
             )
             for seed in seeds
         ]
-        grid_label = f"{grid_size}x{grid_size}(gap={gap})"
+        grid_label = f"{grid_size}x{grid_size}(gap={gap})[{dataset}]"
     else:
         rows = [
             run_case(
@@ -175,10 +200,12 @@ def run_case_multi_seed(
                 seed=seed,
                 local_opt_iters=local_opt_iters,
                 use_position_prior=use_position_prior,
+                auto_position_prior=auto_position_prior,
+                dataset=dataset,
             )
             for seed in seeds
         ]
-        grid_label = f"{grid_size}x{grid_size}"
+        grid_label = f"{grid_size}x{grid_size}[{dataset}]"
 
     pos = np.array([r.position_accuracy for r in rows], dtype=np.float64)
     nbr = np.array([r.neighbor_accuracy for r in rows], dtype=np.float64)
@@ -233,6 +260,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable lightweight learned coordinate prior",
     )
+    parser.add_argument(
+        "--auto-position-prior",
+        action="store_true",
+        help="Enable prior only on ambiguous instances",
+    )
+    parser.add_argument(
+        "--dataset",
+        choices=["natural", "hard"],
+        default="natural",
+        help="Benchmark dataset generator",
+    )
     return parser.parse_args()
 
 
@@ -266,6 +304,8 @@ def main() -> None:
             local_opt_iters=args.local_opt_iters,
             gap=args.gap,
             use_position_prior=args.use_position_prior,
+            auto_position_prior=args.auto_position_prior,
+            dataset=args.dataset,
         )
         for size in args.sizes
     ]

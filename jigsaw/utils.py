@@ -93,6 +93,45 @@ def generate_natural_like_image(size: int = 300, seed: int = 42) -> np.ndarray:
     return np.clip(blended, 0, 255).astype(np.uint8)
 
 
+def generate_hard_repetitive_image(size: int = 300, seed: int = 42) -> np.ndarray:
+    """Generate a hard image with repetitive textures and weak boundaries."""
+    rng = set_random_seed(seed)
+    tile = max(8, size // 12)
+    base_h = max(tile * 2, size // 3)
+    base_w = max(tile * 2, size // 3)
+    base = rng.integers(0, 256, size=(base_h, base_w, 3), dtype=np.uint8)
+
+    reps_y = (size + base_h - 1) // base_h
+    reps_x = (size + base_w - 1) // base_w
+    tiled = np.tile(base, (reps_y, reps_x, 1))[:size, :size, :].copy()
+
+    # Add low-contrast banding to increase local ambiguity.
+    y = np.linspace(0, 2 * np.pi, size, dtype=np.float32)
+    x = np.linspace(0, 2 * np.pi, size, dtype=np.float32)
+    yv, xv = np.meshgrid(y, x, indexing="ij")
+    band = (12.0 * np.sin(3.0 * xv + 2.0 * yv)).astype(np.float32)
+    out = tiled.astype(np.float32)
+    out[:, :, 0] += band
+    out[:, :, 1] += 0.8 * band
+    out[:, :, 2] -= 0.6 * band
+
+    if cv2 is not None:
+        out = cv2.GaussianBlur(out, (0, 0), sigmaX=2.2, sigmaY=2.2)
+    else:
+        padded = np.pad(out, ((1, 1), (1, 1), (0, 0)), mode="reflect")
+        out = (
+            padded[1:-1, 1:-1, :]
+            + padded[:-2, 1:-1, :]
+            + padded[2:, 1:-1, :]
+            + padded[1:-1, :-2, :]
+            + padded[1:-1, 2:, :]
+        ) / 5.0
+
+    noise = rng.normal(0.0, 8.0, size=(size, size, 3)).astype(np.float32)
+    out = out + noise
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
 def load_or_generate_image(path: Optional[str], size: int = 300, seed: int = 42) -> np.ndarray:
     """Load image from path, or generate a natural-like fallback image."""
     if path:

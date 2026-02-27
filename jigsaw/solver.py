@@ -33,6 +33,8 @@ class SolverConfig:
     component_bonus_weight: float = 0.08
     loop_penalty_weight: float = 0.10
     use_position_prior: bool = False
+    auto_position_prior: bool = False
+    ambiguity_threshold: float = 0.03
     position_prior_weight: float = 0.25
     position_prior_samples: int = 24
 
@@ -120,6 +122,9 @@ class JigsawSolver:
     def _build_position_prior_penalty(self, patches: List[Patch]) -> Optional[np.ndarray]:
         if not self.config.use_position_prior:
             return None
+        if self.config.auto_position_prior:
+            if not self._is_ambiguous_case(patches):
+                return None
         return build_position_penalty(
             patches,
             rows=self.config.rows,
@@ -127,6 +132,22 @@ class JigsawSolver:
             samples=self.config.position_prior_samples,
             seed=self.config.seed,
         )
+
+    def _is_ambiguous_case(self, patches: List[Patch]) -> bool:
+        """Detect ambiguous cases where top-1/top-2 edge matches are too close."""
+        cost = self.matcher.build_cost_matrix(patches, normalize=True)
+        n = cost.shape[0]
+        margins: List[float] = []
+        for i in range(n):
+            for d in (Direction.RIGHT, Direction.DOWN):
+                vals = np.sort(cost[i, :, d])
+                finite = vals[np.isfinite(vals)]
+                if finite.size < 2:
+                    continue
+                margins.append(float(finite[1] - finite[0]))
+        if not margins:
+            return False
+        return float(np.mean(margins)) < self.config.ambiguity_threshold
 
     def _select_start_pieces(self, n: int, border_scores: np.ndarray) -> List[int]:
         """Select start-piece candidates for multi-start without blowing up runtime."""

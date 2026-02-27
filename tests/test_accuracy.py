@@ -10,6 +10,7 @@ from jigsaw.solver import JigsawSolver, SolverConfig
 from jigsaw.splitter import PuzzleSplitter
 from jigsaw.utils import (
     generate_gradient_image,
+    generate_hard_repetitive_image,
     generate_natural_like_image,
     generate_random_image,
     shuffle_patches,
@@ -61,3 +62,9 @@ def test_natural_image_metrics() -> None:
     """Report metrics for natural-like image case."""
     image = generate_natural_like_image(size=300, seed=42)
     _evaluate_case("natural", image)
+
+
+def test_hard_repetitive_image_metrics() -> None:
+    """Report metrics for hard repetitive-texture image case."""
+    image = generate_hard_repetitive_image(size=300, seed=42)
+    _evaluate_case("hard-repetitive", image)

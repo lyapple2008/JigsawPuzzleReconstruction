@@ -77,3 +77,32 @@ def test_solver_8x8_accuracy_with_position_prior() -> None:
     evaluator = PuzzleEvaluator()
     acc = evaluator.compute_position_accuracy(grid, shuffled)
     assert acc > 0.9
+
+
+def test_solver_8x8_accuracy_with_auto_position_prior() -> None:
+    """8x8 puzzle should remain accurate with ambiguity-gated position prior."""
+    grid_size = 8
+    image_size = grid_size * 60
+    image = generate_natural_like_image(size=image_size, seed=42)
+    splitter = PuzzleSplitter()
+    patches = splitter.split(image, grid_size, grid_size)
+    shuffled, _ = shuffle_patches(patches, seed=42)
+
+    matcher = EdgeMatcher()
+    cost = matcher.build_cost_matrix(shuffled)
+    solver = JigsawSolver(
+        SolverConfig(
+            rows=grid_size,
+            cols=grid_size,
+            seed=42,
+            local_opt_iters=1000,
+            use_position_prior=True,
+            auto_position_prior=True,
+            position_prior_samples=12,
+        )
+    )
+    grid = solver.solve(shuffled, cost_matrix=cost)
+
+    evaluator = PuzzleEvaluator()
+    acc = evaluator.compute_position_accuracy(grid, shuffled)
+    assert acc > 0.9

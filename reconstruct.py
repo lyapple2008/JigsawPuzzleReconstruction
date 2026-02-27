@@ -110,6 +110,11 @@ def parse_args() -> argparse.Namespace:
         default=24,
         help="Synthetic training sample count for position prior (default: 24)",
     )
+    parser.add_argument(
+        "--auto-position-prior",
+        action="store_true",
+        help="Use position prior only when matcher ambiguity is high",
+    )
     return parser.parse_args()
 
 
@@ -132,6 +137,7 @@ def main() -> None:
             seed=args.seed,
             local_opt_iters=args.local_opt_iters,
             use_position_prior=args.use_position_prior,
+            auto_position_prior=args.auto_position_prior,
             position_prior_samples=args.prior_samples,
         )
     )
