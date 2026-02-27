@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import numpy as np
 
 from .matcher import Direction, EdgeMatcher
+from .position_prior import build_position_penalty
 from .splitter import Patch
 
 
@@ -31,6 +32,9 @@ class SolverConfig:
     mutual_neighbor_bonus_weight: float = 0.12
     component_bonus_weight: float = 0.08
     loop_penalty_weight: float = 0.10
+    use_position_prior: bool = False
+    position_prior_weight: float = 0.25
+    position_prior_samples: int = 24
 
 
 @dataclass
@@ -62,13 +66,18 @@ class JigsawSolver:
         cost = cost_matrix if cost_matrix is not None else self.matcher.build_cost_matrix(patches)
         border_scores = self._compute_border_scores(cost)
         priors = self._build_structural_priors(cost)
-        grid = self._build_best_initial_solution(cost, border_scores, priors)
+        position_penalty = self._build_position_prior_penalty(patches)
+        grid = self._build_best_initial_solution(cost, border_scores, priors, position_penalty)
         if self.config.local_opt_iters > 0:
-            grid = self._local_swap_optimize(grid, cost, self.config.local_opt_iters)
+            grid = self._local_swap_optimize(grid, cost, position_penalty, self.config.local_opt_iters)
         return grid
 
     def _build_best_initial_solution(
-        self, cost: np.ndarray, border_scores: np.ndarray, priors: StructuralPriors
+        self,
+        cost: np.ndarray,
+        border_scores: np.ndarray,
+        priors: StructuralPriors,
+        position_penalty: Optional[np.ndarray],
     ) -> np.ndarray:
         """Generate one random-seeded solution and optionally improve with multi-start."""
         rows, cols = self.config.rows, self.config.cols
@@ -78,11 +87,15 @@ class JigsawSolver:
         first_start = start_pieces[0]
         if self.config.use_beam_init:
             best_grid = self._beam_initial_solution(
-                cost, border_scores=border_scores, priors=priors, start_piece=first_start
+                cost,
+                border_scores=border_scores,
+                priors=priors,
+                position_penalty=position_penalty,
+                start_piece=first_start,
             )
         else:
             best_grid = self._greedy_initial_solution(cost, start_piece=first_start)
-        best_cost = self.matcher.total_grid_cost(best_grid, cost)
+        best_cost = self._objective(best_grid, cost, position_penalty)
 
         if not self.config.use_multi_start:
             return best_grid
@@ -90,15 +103,30 @@ class JigsawSolver:
         for start_piece in start_pieces[1:]:
             if self.config.use_beam_init:
                 candidate = self._beam_initial_solution(
-                    cost, border_scores=border_scores, priors=priors, start_piece=start_piece
+                    cost,
+                    border_scores=border_scores,
+                    priors=priors,
+                    position_penalty=position_penalty,
+                    start_piece=start_piece,
                 )
             else:
                 candidate = self._greedy_initial_solution(cost, start_piece=start_piece)
-            candidate_cost = self.matcher.total_grid_cost(candidate, cost)
+            candidate_cost = self._objective(candidate, cost, position_penalty)
             if candidate_cost < best_cost:
                 best_grid = candidate
                 best_cost = candidate_cost
         return best_grid
+
+    def _build_position_prior_penalty(self, patches: List[Patch]) -> Optional[np.ndarray]:
+        if not self.config.use_position_prior:
+            return None
+        return build_position_penalty(
+            patches,
+            rows=self.config.rows,
+            cols=self.config.cols,
+            samples=self.config.position_prior_samples,
+            seed=self.config.seed,
+        )
 
     def _select_start_pieces(self, n: int, border_scores: np.ndarray) -> List[int]:
         """Select start-piece candidates for multi-start without blowing up runtime."""
@@ -239,7 +267,12 @@ class JigsawSolver:
         return self.config.border_bonus_weight * bonus
 
     def _beam_initial_solution(
-        self, cost: np.ndarray, border_scores: np.ndarray, priors: StructuralPriors, start_piece: int
+        self,
+        cost: np.ndarray,
+        border_scores: np.ndarray,
+        priors: StructuralPriors,
+        position_penalty: Optional[np.ndarray],
+        start_piece: int,
     ) -> np.ndarray:
         """Build initial arrangement with beam search over row-major placement."""
         rows, cols = self.config.rows, self.config.cols
@@ -253,7 +286,9 @@ class JigsawSolver:
             r, c = divmod(pos, cols)
             expanded: List[Tuple[float, np.ndarray, Set[int]]] = []
             for score, grid, unused in beams:
-                candidates = self._rank_candidates(cost, border_scores, priors, grid, unused, r, c)
+                candidates = self._rank_candidates(
+                    cost, border_scores, priors, position_penalty, grid, unused, r, c
+                )
                 for piece, local_cost in candidates[: self.config.beam_candidate_pool]:
                     next_grid = grid.copy()
                     next_grid[r, c] = piece
@@ -273,6 +308,7 @@ class JigsawSolver:
         cost: np.ndarray,
         border_scores: np.ndarray,
         priors: StructuralPriors,
+        position_penalty: Optional[np.ndarray],
         grid: np.ndarray,
         unused: Set[int],
         r: int,
@@ -295,6 +331,8 @@ class JigsawSolver:
             value -= self._mutual_bonus(priors, left, up, piece)
             value -= self._component_bonus(priors, left, up, piece)
             value += self._loop_penalty(cost, up_left, up, left, piece)
+            if position_penalty is not None:
+                value += self.config.position_prior_weight * float(position_penalty[r, c, piece])
             scores.append((piece, value))
         scores.sort(key=lambda x: x[1])
         return scores
@@ -339,10 +377,36 @@ class JigsawSolver:
         path_b = float(cost[up_left, left, Direction.DOWN] + cost[left, piece, Direction.RIGHT])
         return self.config.loop_penalty_weight * abs(path_a - path_b)
 
-    def _local_swap_optimize(self, grid: np.ndarray, cost: np.ndarray, iterations: int) -> np.ndarray:
+    def _position_penalty_sum(self, grid: np.ndarray, penalty: Optional[np.ndarray]) -> float:
+        if penalty is None:
+            return 0.0
+        rows, cols = grid.shape
+        total = 0.0
+        for r in range(rows):
+            for c in range(cols):
+                total += float(penalty[r, c, int(grid[r, c])])
+        return total
+
+    def _objective(
+        self, grid: np.ndarray, cost: np.ndarray, position_penalty: Optional[np.ndarray]
+    ) -> float:
+        base = self.matcher.total_grid_cost(grid, cost)
+        if position_penalty is None:
+            return base
+        return base + self.config.position_prior_weight * self._position_penalty_sum(
+            grid, position_penalty
+        )
+
+    def _local_swap_optimize(
+        self,
+        grid: np.ndarray,
+        cost: np.ndarray,
+        position_penalty: Optional[np.ndarray],
+        iterations: int,
+    ) -> np.ndarray:
         """Improve solution with simulated annealing swaps to escape local minima."""
         current = grid.copy()
-        current_cost = self.matcher.total_grid_cost(current, cost)
+        current_cost = self._objective(current, cost, position_penalty)
         best = current.copy()
         best_cost = current_cost
 
@@ -359,7 +423,7 @@ class JigsawSolver:
 
             candidate = current.copy()
             candidate[r1, c1], candidate[r2, c2] = candidate[r2, c2], candidate[r1, c1]
-            candidate_cost = self.matcher.total_grid_cost(candidate, cost)
+            candidate_cost = self._objective(candidate, cost, position_penalty)
             delta = candidate_cost - current_cost
 
             if delta < 0 or float(self.rng.random()) < float(np.exp(-delta / max(temp, 1e-6))):

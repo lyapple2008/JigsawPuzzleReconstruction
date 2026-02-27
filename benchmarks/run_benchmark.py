@@ -39,7 +39,7 @@ class BenchmarkRow:
     runtime_sec: float
 
 
-def run_case(grid_size: int, seed: int, local_opt_iters: int) -> BenchmarkRow:
+def run_case(grid_size: int, seed: int, local_opt_iters: int, use_position_prior: bool) -> BenchmarkRow:
     image_size = grid_size * 60
     image = generate_natural_like_image(size=image_size, seed=seed)
     splitter = PuzzleSplitter()
@@ -54,6 +54,7 @@ def run_case(grid_size: int, seed: int, local_opt_iters: int) -> BenchmarkRow:
             cols=grid_size,
             seed=seed,
             local_opt_iters=local_opt_iters,
+            use_position_prior=use_position_prior,
         )
     )
 
@@ -98,7 +99,7 @@ def _compose_with_uniform_gap(
 
 
 def run_case_with_gap(
-    grid_size: int, seed: int, local_opt_iters: int, gap: int
+    grid_size: int, seed: int, local_opt_iters: int, gap: int, use_position_prior: bool
 ) -> BenchmarkRow:
     image_size = grid_size * 60
     image = generate_natural_like_image(size=image_size, seed=seed)
@@ -122,6 +123,7 @@ def run_case_with_gap(
             cols=grid_size,
             seed=seed,
             local_opt_iters=local_opt_iters,
+            use_position_prior=use_position_prior,
         )
     )
 
@@ -148,16 +150,34 @@ def run_case_with_gap(
 
 
 def run_case_multi_seed(
-    grid_size: int, seeds: List[int], local_opt_iters: int, gap: int
+    grid_size: int,
+    seeds: List[int],
+    local_opt_iters: int,
+    gap: int,
+    use_position_prior: bool,
 ) -> BenchmarkRow:
     if gap > 0:
         rows = [
-            run_case_with_gap(grid_size, seed=seed, local_opt_iters=local_opt_iters, gap=gap)
+            run_case_with_gap(
+                grid_size,
+                seed=seed,
+                local_opt_iters=local_opt_iters,
+                gap=gap,
+                use_position_prior=use_position_prior,
+            )
             for seed in seeds
         ]
         grid_label = f"{grid_size}x{grid_size}(gap={gap})"
     else:
-        rows = [run_case(grid_size, seed=seed, local_opt_iters=local_opt_iters) for seed in seeds]
+        rows = [
+            run_case(
+                grid_size,
+                seed=seed,
+                local_opt_iters=local_opt_iters,
+                use_position_prior=use_position_prior,
+            )
+            for seed in seeds
+        ]
         grid_label = f"{grid_size}x{grid_size}"
 
     pos = np.array([r.position_accuracy for r in rows], dtype=np.float64)
@@ -208,6 +228,11 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Optional uniform gap width between patches for stress testing (default: 0)",
     )
+    parser.add_argument(
+        "--use-position-prior",
+        action="store_true",
+        help="Enable lightweight learned coordinate prior",
+    )
     return parser.parse_args()
 
 
@@ -240,6 +265,7 @@ def main() -> None:
             seeds=seeds,
             local_opt_iters=args.local_opt_iters,
             gap=args.gap,
+            use_position_prior=args.use_position_prior,
         )
         for size in args.sizes
     ]

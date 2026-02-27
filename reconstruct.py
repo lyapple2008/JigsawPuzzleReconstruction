@@ -99,6 +99,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Overlay detected grid boundaries on the shuffled input image when showing",
     )
+    parser.add_argument(
+        "--use-position-prior",
+        action="store_true",
+        help="Enable lightweight learned coordinate prior during solving",
+    )
+    parser.add_argument(
+        "--prior-samples",
+        type=int,
+        default=24,
+        help="Synthetic training sample count for position prior (default: 24)",
+    )
     return parser.parse_args()
 
 
@@ -120,6 +131,8 @@ def main() -> None:
             cols=cols,
             seed=args.seed,
             local_opt_iters=args.local_opt_iters,
+            use_position_prior=args.use_position_prior,
+            position_prior_samples=args.prior_samples,
         )
     )
     solved_grid = solver.solve(patches, cost_matrix=cost_matrix)
