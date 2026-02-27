@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,7 +21,12 @@ from jigsaw.gap_splitter import split_with_gap_aware
 from jigsaw.matcher import EdgeMatcher
 from jigsaw.solver import JigsawSolver, SolverConfig
 from jigsaw.splitter import Patch, PuzzleSplitter
-from jigsaw.utils import generate_hard_repetitive_image, generate_natural_like_image, shuffle_patches
+from jigsaw.utils import (
+    degrade_observation,
+    generate_hard_repetitive_image,
+    generate_natural_like_image,
+    shuffle_patches,
+)
 
 
 @dataclass
@@ -45,55 +51,6 @@ def _make_image(size: int, seed: int, dataset: str) -> np.ndarray:
     return generate_natural_like_image(size=size, seed=seed)
 
 
-def run_case(
-    grid_size: int,
-    seed: int,
-    local_opt_iters: int,
-    use_position_prior: bool,
-    auto_position_prior: bool,
-    dataset: str,
-) -> BenchmarkRow:
-    image_size = grid_size * 60
-    image = _make_image(image_size, seed=seed, dataset=dataset)
-    splitter = PuzzleSplitter()
-    patches = splitter.split(image, grid_size, grid_size)
-    shuffled, _ = shuffle_patches(patches, seed=seed)
-
-    matcher = EdgeMatcher()
-    cost = matcher.build_cost_matrix(shuffled)
-    solver = JigsawSolver(
-        SolverConfig(
-            rows=grid_size,
-            cols=grid_size,
-            seed=seed,
-            local_opt_iters=local_opt_iters,
-            use_position_prior=use_position_prior,
-            auto_position_prior=auto_position_prior,
-        )
-    )
-
-    t0 = time.perf_counter()
-    solved = solver.solve(shuffled, cost_matrix=cost)
-    runtime_sec = time.perf_counter() - t0
-
-    evaluator = PuzzleEvaluator()
-    result = evaluator.evaluate(solved, shuffled, cost)
-    return BenchmarkRow(
-        grid=f"{grid_size}x{grid_size}[{dataset}]",
-        seeds=1,
-        pos_acc_mean=result.position_accuracy,
-        pos_acc_min=result.position_accuracy,
-        nbr_acc_mean=result.neighbor_accuracy,
-        nbr_acc_min=result.neighbor_accuracy,
-        total_cost_mean=result.total_cost,
-        position_accuracy=result.position_accuracy,
-        neighbor_accuracy=result.neighbor_accuracy,
-        total_cost=result.total_cost,
-        runtime_mean_sec=runtime_sec,
-        runtime_sec=runtime_sec,
-    )
-
-
 def _compose_with_uniform_gap(
     patches: List[Patch], rows: int, cols: int, gap: int, background: int = 0
 ) -> np.ndarray:
@@ -112,28 +69,53 @@ def _compose_with_uniform_gap(
     return canvas
 
 
-def run_case_with_gap(
+def _prepare_labeled_patches(
+    shuffled: List[Patch],
+    rows: int,
+    cols: int,
+    seed: int,
+    gap: int,
+    observation_mode: str,
+) -> List[Patch]:
+    if gap == 0 and observation_mode == "clean":
+        return shuffled
+
+    observed = _compose_with_uniform_gap(shuffled, rows, cols, gap=gap, background=10)
+    observed = degrade_observation(observed, seed=seed + 17, mode=observation_mode)
+
+    if gap > 0:
+        extracted, _, _ = split_with_gap_aware(observed, rows=rows, cols=cols)
+    else:
+        extracted = PuzzleSplitter().split(observed, rows=rows, cols=cols)
+
+    return [
+        Patch.from_image(extracted[i].image, original_index=shuffled[i].original_index)
+        for i in range(len(extracted))
+    ]
+
+
+def run_case(
     grid_size: int,
     seed: int,
     local_opt_iters: int,
-    gap: int,
     use_position_prior: bool,
     auto_position_prior: bool,
     dataset: str,
+    observation_mode: str,
 ) -> BenchmarkRow:
     image_size = grid_size * 60
     image = _make_image(image_size, seed=seed, dataset=dataset)
     splitter = PuzzleSplitter()
     patches = splitter.split(image, grid_size, grid_size)
     shuffled, _ = shuffle_patches(patches, seed=seed)
-
-    gapped = _compose_with_uniform_gap(shuffled, grid_size, grid_size, gap=gap, background=10)
-    extracted, _, _ = split_with_gap_aware(gapped, rows=grid_size, cols=grid_size)
-    # Restore semantic labels for evaluation.
-    labeled = [
-        Patch.from_image(extracted[i].image, original_index=shuffled[i].original_index)
-        for i in range(len(extracted))
-    ]
+    labeled = _prepare_labeled_patches(
+        shuffled=shuffled,
+        rows=grid_size,
+        cols=grid_size,
+        seed=seed,
+        gap=0,
+        observation_mode=observation_mode,
+    )
 
     matcher = EdgeMatcher()
     cost = matcher.build_cost_matrix(labeled)
@@ -155,7 +137,67 @@ def run_case_with_gap(
     evaluator = PuzzleEvaluator()
     result = evaluator.evaluate(solved, labeled, cost)
     return BenchmarkRow(
-        grid=f"{grid_size}x{grid_size}(gap={gap})[{dataset}]",
+        grid=f"{grid_size}x{grid_size}[{dataset}/{observation_mode}]",
+        seeds=1,
+        pos_acc_mean=result.position_accuracy,
+        pos_acc_min=result.position_accuracy,
+        nbr_acc_mean=result.neighbor_accuracy,
+        nbr_acc_min=result.neighbor_accuracy,
+        total_cost_mean=result.total_cost,
+        position_accuracy=result.position_accuracy,
+        neighbor_accuracy=result.neighbor_accuracy,
+        total_cost=result.total_cost,
+        runtime_mean_sec=runtime_sec,
+        runtime_sec=runtime_sec,
+    )
+
+
+def run_case_with_gap(
+    grid_size: int,
+    seed: int,
+    local_opt_iters: int,
+    gap: int,
+    use_position_prior: bool,
+    auto_position_prior: bool,
+    dataset: str,
+    observation_mode: str,
+) -> BenchmarkRow:
+    image_size = grid_size * 60
+    image = _make_image(image_size, seed=seed, dataset=dataset)
+    splitter = PuzzleSplitter()
+    patches = splitter.split(image, grid_size, grid_size)
+    shuffled, _ = shuffle_patches(patches, seed=seed)
+
+    labeled = _prepare_labeled_patches(
+        shuffled=shuffled,
+        rows=grid_size,
+        cols=grid_size,
+        seed=seed,
+        gap=gap,
+        observation_mode=observation_mode,
+    )
+
+    matcher = EdgeMatcher()
+    cost = matcher.build_cost_matrix(labeled)
+    solver = JigsawSolver(
+        SolverConfig(
+            rows=grid_size,
+            cols=grid_size,
+            seed=seed,
+            local_opt_iters=local_opt_iters,
+            use_position_prior=use_position_prior,
+            auto_position_prior=auto_position_prior,
+        )
+    )
+
+    t0 = time.perf_counter()
+    solved = solver.solve(labeled, cost_matrix=cost)
+    runtime_sec = time.perf_counter() - t0
+
+    evaluator = PuzzleEvaluator()
+    result = evaluator.evaluate(solved, labeled, cost)
+    return BenchmarkRow(
+        grid=f"{grid_size}x{grid_size}(gap={gap})[{dataset}/{observation_mode}]",
         seeds=1,
         pos_acc_mean=result.position_accuracy,
         pos_acc_min=result.position_accuracy,
@@ -178,6 +220,7 @@ def run_case_multi_seed(
     use_position_prior: bool,
     auto_position_prior: bool,
     dataset: str,
+    observation_mode: str,
 ) -> BenchmarkRow:
     if gap > 0:
         rows = [
@@ -189,10 +232,11 @@ def run_case_multi_seed(
                 use_position_prior=use_position_prior,
                 auto_position_prior=auto_position_prior,
                 dataset=dataset,
+                observation_mode=observation_mode,
             )
             for seed in seeds
         ]
-        grid_label = f"{grid_size}x{grid_size}(gap={gap})[{dataset}]"
+        grid_label = f"{grid_size}x{grid_size}(gap={gap})[{dataset}/{observation_mode}]"
     else:
         rows = [
             run_case(
@@ -202,10 +246,11 @@ def run_case_multi_seed(
                 use_position_prior=use_position_prior,
                 auto_position_prior=auto_position_prior,
                 dataset=dataset,
+                observation_mode=observation_mode,
             )
             for seed in seeds
         ]
-        grid_label = f"{grid_size}x{grid_size}[{dataset}]"
+        grid_label = f"{grid_size}x{grid_size}[{dataset}/{observation_mode}]"
 
     pos = np.array([r.position_accuracy for r in rows], dtype=np.float64)
     nbr = np.array([r.neighbor_accuracy for r in rows], dtype=np.float64)
@@ -271,6 +316,18 @@ def parse_args() -> argparse.Namespace:
         default="natural",
         help="Benchmark dataset generator",
     )
+    parser.add_argument(
+        "--observation-mode",
+        choices=["clean", "challenging"],
+        default="clean",
+        help="Observation degradation mode before splitting",
+    )
+    parser.add_argument(
+        "--report-json",
+        type=str,
+        default=None,
+        help="Optional path to save benchmark rows as JSON report",
+    )
     return parser.parse_args()
 
 
@@ -294,6 +351,26 @@ def print_table(rows: List[BenchmarkRow]) -> None:
         )
 
 
+def write_json_report(path: Path, args: argparse.Namespace, rows: List[BenchmarkRow]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "config": {
+            "sizes": args.sizes,
+            "seed": args.seed,
+            "num_seeds": args.num_seeds,
+            "local_opt_iters": args.local_opt_iters,
+            "gap": args.gap,
+            "use_position_prior": args.use_position_prior,
+            "auto_position_prior": args.auto_position_prior,
+            "dataset": args.dataset,
+            "observation_mode": args.observation_mode,
+        },
+        "rows": [r.__dict__ for r in rows],
+    }
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
+
 def main() -> None:
     args = parse_args()
     seeds = [args.seed + i for i in range(args.num_seeds)]
@@ -306,10 +383,15 @@ def main() -> None:
             use_position_prior=args.use_position_prior,
             auto_position_prior=args.auto_position_prior,
             dataset=args.dataset,
+            observation_mode=args.observation_mode,
         )
         for size in args.sizes
     ]
     print_table(rows)
+    if args.report_json:
+        report_path = Path(args.report_json)
+        write_json_report(report_path, args, rows)
+        print(f"\nJSON report saved to: {report_path.resolve()}")
 
 
 if __name__ == "__main__":

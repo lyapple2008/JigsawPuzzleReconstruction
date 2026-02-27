@@ -132,6 +132,47 @@ def generate_hard_repetitive_image(size: int = 300, seed: int = 42) -> np.ndarra
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
+def degrade_observation(image: np.ndarray, seed: int = 42, mode: str = "challenging") -> np.ndarray:
+    """Apply deterministic observation degradations to mimic real captures."""
+    if mode == "clean":
+        return image.copy()
+
+    rng = set_random_seed(seed)
+    out = image.astype(np.float32).copy()
+
+    # Mild channel-wise color scaling and bias.
+    scale = rng.uniform(0.94, 1.06, size=(1, 1, 3)).astype(np.float32)
+    bias = rng.uniform(-5.0, 5.0, size=(1, 1, 3)).astype(np.float32)
+    out = out * scale + bias
+
+    # Low-frequency illumination shift.
+    h, w, _ = out.shape
+    y = np.linspace(-1.0, 1.0, h, dtype=np.float32)
+    x = np.linspace(-1.0, 1.0, w, dtype=np.float32)
+    yv, xv = np.meshgrid(y, x, indexing="ij")
+    illum = 1.0 + 0.04 * (0.6 * xv + 0.4 * yv)
+    out *= illum[:, :, None]
+
+    # Blur + sensor noise.
+    if cv2 is not None:
+        sigma = float(rng.uniform(0.2, 0.8))
+        out = cv2.GaussianBlur(out, (0, 0), sigmaX=sigma, sigmaY=sigma)
+    noise = rng.normal(0.0, 3.0, size=out.shape).astype(np.float32)
+    out += noise
+
+    out = np.clip(out, 0, 255).astype(np.uint8)
+
+    # JPEG compression artifacts.
+    if cv2 is not None:
+        quality = int(rng.integers(65, 86))
+        ok, enc = cv2.imencode(".jpg", cv2.cvtColor(out, cv2.COLOR_RGB2BGR), [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+        if ok:
+            dec = cv2.imdecode(enc, cv2.IMREAD_COLOR)
+            if dec is not None:
+                out = cv2.cvtColor(dec, cv2.COLOR_BGR2RGB)
+    return out
+
+
 def load_or_generate_image(path: Optional[str], size: int = 300, seed: int = 42) -> np.ndarray:
     """Load image from path, or generate a natural-like fallback image."""
     if path:

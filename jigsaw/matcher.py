@@ -23,14 +23,16 @@ class EdgeMatcher:
     def __init__(
         self,
         strip_width: int = 3,
-        color_weight: float = 0.85,
+        color_weight: float = 0.65,
         gradient_weight: float = 0.15,
+        normalized_weight: float = 0.20,
         seam_ignore: int = 1,
     ) -> None:
         """Initialize matcher parameters for robust edge comparison."""
         self.strip_width = max(1, int(strip_width))
         self.color_weight = float(color_weight)
         self.gradient_weight = float(gradient_weight)
+        self.normalized_weight = float(normalized_weight)
         self.seam_ignore = max(0, int(seam_ignore))
 
     def _get_strip(self, patch: Patch, side: str) -> np.ndarray:
@@ -83,6 +85,28 @@ class EdgeMatcher:
             raise ValueError(f"Unsupported direction: {direction}")
         return self._safe_mean_sq(strip_a - strip_b)
 
+    @staticmethod
+    def _normalize_strip(strip: np.ndarray) -> np.ndarray:
+        flat = strip.reshape(-1, strip.shape[-1]).astype(np.float32)
+        mu = np.mean(flat, axis=0, keepdims=True)
+        std = np.std(flat, axis=0, keepdims=True)
+        std = np.where(std < 1e-6, 1.0, std)
+        norm = (flat - mu) / std
+        return norm.reshape(strip.shape)
+
+    def _normalized_strip_distance(
+        self, patch_a: Patch, patch_b: Patch, direction: Direction
+    ) -> float:
+        if direction == Direction.RIGHT:
+            strip_a = self._get_strip(patch_a, "right")
+            strip_b = self._get_strip(patch_b, "left")
+        elif direction == Direction.DOWN:
+            strip_a = self._get_strip(patch_a, "bottom")
+            strip_b = self._get_strip(patch_b, "top")
+        else:
+            raise ValueError(f"Unsupported direction: {direction}")
+        return self._safe_mean_sq(self._normalize_strip(strip_a) - self._normalize_strip(strip_b))
+
     def _seam_gradient_distance(self, patch_a: Patch, patch_b: Patch, direction: Direction) -> float:
         """Compare first-order gradients at seam to penalize edge discontinuities."""
         a = patch_a.image.astype(np.float32)
@@ -124,8 +148,13 @@ class EdgeMatcher:
 
         edge_dist = float(np.sum((edge_a - edge_b) ** 2))
         strip_dist = self._color_strip_distance(patch_a, patch_b, direction)
+        norm_dist = self._normalized_strip_distance(patch_a, patch_b, direction)
         grad_dist = self._seam_gradient_distance(patch_a, patch_b, direction)
-        fused = self.color_weight * strip_dist + self.gradient_weight * grad_dist
+        fused = (
+            self.color_weight * strip_dist
+            + self.gradient_weight * grad_dist
+            + self.normalized_weight * norm_dist
+        )
         dist = 0.5 * edge_dist + 0.5 * fused
         if normalize:
             denom = float(edge_a.size) if edge_a.size else 1.0
