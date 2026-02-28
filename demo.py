@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 
 from jigsaw.evaluator import PuzzleEvaluator
 from jigsaw.matcher import EdgeMatcher
+from jigsaw.puzzle_roi import extract_puzzle_region_with_metadata
 from jigsaw.solver import JigsawSolver, SolverConfig
 from jigsaw.splitter import PuzzleSplitter
 from jigsaw.utils import (
@@ -18,10 +19,33 @@ from jigsaw.utils import (
     shuffle_patches,
 )
 
+try:
+    import cv2  # type: ignore
+except ImportError:  # pragma: no cover
+    cv2 = None
 
-def run_demo(image_path: str | None = None, grid_size: int = 5) -> None:
+
+def run_demo(
+    image_path: str | None = None,
+    grid_size: int = 5,
+    extract_roi: bool = False,
+) -> None:
     """Run full pipeline and display original/shuffled/reconstructed images."""
-    image = load_or_generate_image(image_path, size=300, seed=42)
+    if extract_roi and image_path and cv2 is not None:
+        raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
+        if raw is None:
+            raise ValueError(f"Failed to load image from path: {image_path}")
+        raw = cv2.cvtColor(raw, cv2.COLOR_BGR2RGB)
+        roi_result = extract_puzzle_region_with_metadata(raw)
+        image = roi_result.image
+        if roi_result.rows is not None and roi_result.cols is not None:
+            print(f"Extracted puzzle ROI: bbox={roi_result.bbox}, inferred grid={roi_result.rows}x{roi_result.cols}")
+        side = (300 // grid_size) * grid_size
+        if side < grid_size:
+            side = grid_size * 60
+        image = cv2.resize(image, (side, side), interpolation=cv2.INTER_AREA)
+    else:
+        image = load_or_generate_image(image_path, size=300, seed=42)
     splitter = PuzzleSplitter()
     patches = splitter.split(image, grid_size, grid_size)
     shuffled_patches, _ = shuffle_patches(patches, seed=42)
@@ -66,9 +90,18 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Square jigsaw puzzle reconstruction demo")
     parser.add_argument("--image", type=str, default=None, help="Optional input image path")
     parser.add_argument("--grid-size", type=int, default=5, help="Puzzle grid size, default=5")
+    parser.add_argument(
+        "--extract-roi",
+        action="store_true",
+        help="Extract puzzle region from screenshot before running demo",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run_demo(image_path=args.image, grid_size=args.grid_size)
+    run_demo(
+        image_path=args.image,
+        grid_size=args.grid_size,
+        extract_roi=args.extract_roi,
+    )

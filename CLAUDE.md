@@ -50,6 +50,28 @@ project_root/
 
 ---
 
+## 代码执行环境
+
+**所有代码请在 conda 环境名为 `jigsaw` 中执行。**
+
+运行任何脚本、测试或 demo 前，请先激活该环境：
+
+```bash
+conda activate jigsaw
+```
+
+示例：
+
+```bash
+conda activate jigsaw
+pip install -r requirements.txt   # 若依赖未安装
+python demo.py --image examples/IMG_0970.PNG --extract-roi
+python -m pytest tests/ -v
+```
+
+---
+
+
 # 🧠 算法要求
 
 ---
@@ -141,6 +163,8 @@ accuracy = 正确位置的块数 / 总块数
 ---
 
 # 🧪 测试要求
+
+**测试请在 conda 环境 `jigsaw` 中执行**（`conda activate jigsaw` 后再运行 pytest）。
 
 ---
 
@@ -257,6 +281,7 @@ Claude Code 必须按以下顺序实现：
 
 满足以下条件才算完成：
 
+- 在 conda 环境 `jigsaw` 中执行所有命令（`conda activate jigsaw`）
 - demo.py 可正常运行
 - 所有 pytest 测试通过
 - 5x5 拼图准确率 > 85%

@@ -10,6 +10,7 @@ import numpy as np
 
 from jigsaw.gap_splitter import split_with_gap_aware
 from jigsaw.matcher import EdgeMatcher
+from jigsaw.puzzle_roi import extract_puzzle_region_with_metadata
 from jigsaw.solver import JigsawSolver, SolverConfig
 from jigsaw.utils import compose_image_from_grid
 
@@ -115,6 +116,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use position prior only when matcher ambiguity is high",
     )
+    parser.add_argument(
+        "--extract-roi",
+        action="store_true",
+        help="Extract puzzle region from screenshot (UI cropped out) before solving",
+    )
     return parser.parse_args()
 
 
@@ -126,6 +132,13 @@ def main() -> None:
     output_path = Path(args.output) if args.output else None
 
     image = load_image(image_path)
+    if args.extract_roi:
+        roi_result = extract_puzzle_region_with_metadata(image)
+        image = roi_result.image
+        if roi_result.rows is not None and roi_result.cols is not None:
+            print(f"Extracted puzzle ROI: bbox={roi_result.bbox}, inferred grid={roi_result.rows}x{roi_result.cols}")
+        else:
+            print("Extracted puzzle ROI: no regular grid detected, using full image")
     patches, row_ranges, col_ranges = split_with_gap_aware(image, rows=rows, cols=cols)
 
     matcher = EdgeMatcher()
