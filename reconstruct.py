@@ -132,6 +132,7 @@ def main() -> None:
     output_path = Path(args.output) if args.output else None
 
     image = load_image(image_path)
+    original_image = image.copy()
     if args.extract_roi:
         roi_result = extract_puzzle_region_with_metadata(image)
         image = roi_result.image
@@ -173,7 +174,10 @@ def main() -> None:
     if not args.no_show:
         import matplotlib.pyplot as plt
 
-        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        axes[0].imshow(original_image)
+        axes[0].set_title("原图")
+
         display_image = image.copy()
         if args.show_grid:
             for y0, y1 in row_ranges:
@@ -182,11 +186,10 @@ def main() -> None:
             for x0, x1 in col_ranges:
                 display_image[:, max(0, x0 - 1) : min(display_image.shape[1], x0 + 1), :] = (255, 0, 0)
                 display_image[:, max(0, x1 - 1) : min(display_image.shape[1], x1 + 1), :] = (255, 0, 0)
-
-        axes[0].imshow(display_image)
-        axes[0].set_title("Shuffled Input")
-        axes[1].imshow(reconstructed)
-        axes[1].set_title("Reconstructed")
+        axes[1].imshow(display_image)
+        axes[1].set_title("Shuffled Input")
+        axes[2].imshow(reconstructed)
+        axes[2].set_title("还原后的图像")
         for ax in axes:
             ax.axis("off")
         plt.tight_layout()
