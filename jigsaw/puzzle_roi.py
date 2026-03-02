@@ -239,13 +239,26 @@ def extract_puzzle_region(
 
 def extract_puzzle_region_with_metadata(
     image: np.ndarray,
+    method: str = "color",
     **kwargs: object,
 ) -> PuzzleROIResult:
-    """Extract puzzle region and return result with bbox and inferred grid size."""
-    _require_cv2()
+    """Extract puzzle region and return result with bbox and optional grid size.
+
+    method: "color" 使用基于背景颜色的提取（默认），"grid" 使用基于网格线检测的提取。
+    """
     if image.ndim != 3 or image.shape[2] != 3:
         raise ValueError("image must be HxWx3 RGB")
 
+    if method == "color":
+        from jigsaw.roi_color import extract_puzzle_region_by_color
+        color_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k in ("sample_border", "distance_threshold", "min_area_ratio", "max_area_ratio",
+                     "min_aspect_ratio", "max_aspect_ratio", "center_offset_tol", "refine_margin")
+        }
+        return extract_puzzle_region_by_color(image, **color_kwargs)
+
+    _require_cv2()
     h, w = image.shape[:2]
     merge_dist = kwargs.pop("merge_dist", None)
     if merge_dist is None:

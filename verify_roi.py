@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """单独验证拼图 ROI 提取：加载截图、提取拼图区域并可视化对比。
 
+默认使用基于背景颜色的提取（--method color）；可选基于网格线检测（--method grid）。
+
 在 conda 环境 jigsaw 中执行：
     conda activate jigsaw
     python verify_roi.py --image examples/IMG_0970.PNG
-    python verify_roi.py --image path/to/screenshot.png --output crop.png
+    python verify_roi.py --image path/to/screenshot.png --output crop.png --method color
 """
 
 from __future__ import annotations
@@ -58,6 +60,13 @@ def main() -> None:
         action="store_true",
         help="不弹出可视化窗口（仅打印信息，可与 --output 一起用）",
     )
+    parser.add_argument(
+        "--method",
+        type=str,
+        choices=("color", "grid"),
+        default="color",
+        help="提取方式：color=背景颜色（默认），grid=网格线检测",
+    )
     args = parser.parse_args()
 
     image_path = Path(args.image)
@@ -65,7 +74,7 @@ def main() -> None:
         raise SystemExit(f"文件不存在: {image_path}")
 
     image = load_image(image_path)
-    result = extract_puzzle_region_with_metadata(image)
+    result = extract_puzzle_region_with_metadata(image, method=args.method)
 
     x_min, y_min, x_max, y_max = result.bbox
     h, w = image.shape[:2]
