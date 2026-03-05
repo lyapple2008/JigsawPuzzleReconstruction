@@ -154,13 +154,18 @@ def main() -> None:
     matcher = EdgeMatcher()
     cost_matrix = matcher.build_cost_matrix(patches)
 
-    # For gaps solver, pass ROI image (after extraction)
-    # Use rectangular piece_size to match the actual patch dimensions
     sorted_patches = sorted(patches, key=lambda p: p.original_index)
     solver_kwargs = {}
+
+    # For gaps solver, pass reconstructed image from patches (no gaps)
+    # Use rectangular piece_size to match the actual patch dimensions
     if args.solver == "gaps":
-        original_for_solver = image
-        # Use the actual patch dimensions as piece_size (supports rectangular pieces)
+        # 关键修复：将分块后的图像重新拼接，排除缝隙
+        original_for_solver = compose_image_from_grid(
+            np.arange(len(patches)).reshape(rows, cols),
+            sorted_patches
+        )
+        # 使用等分方式计算 piece_size（因为现在图像已经没有缝隙了）
         patch_h, patch_w = sorted_patches[0].image.shape[:2]
         solver_kwargs["piece_size"] = (patch_h, patch_w)
     else:
@@ -220,32 +225,32 @@ def main() -> None:
         for ax in axes:
             ax.axis("off")
         plt.tight_layout()
-        plt.show(block=False)
+        plt.show(block=True)
 
         # 显示分块后的图像网格（按原始位置排列）
-        sorted_patches_for_display = sorted(patches, key=lambda p: p.original_index)
-        fig_patches, axes_patches = plt.subplots(rows, cols, figsize=(cols * 1.5, rows * 1.5))
-        if rows == 1 and cols == 1:
-            axes_patches = [[axes_patches]]
-        elif rows == 1:
-            axes_patches = [axes_patches]
-        elif cols == 1:
-            axes_patches = [[ax] for ax in axes_patches]
+        # sorted_patches_for_display = sorted(patches, key=lambda p: p.original_index)
+        # fig_patches, axes_patches = plt.subplots(rows, cols, figsize=(cols * 1.5, rows * 1.5))
+        # if rows == 1 and cols == 1:
+        #     axes_patches = [[axes_patches]]
+        # elif rows == 1:
+        #     axes_patches = [axes_patches]
+        # elif cols == 1:
+        #     axes_patches = [[ax] for ax in axes_patches]
         
-        for r in range(rows):
-            for c in range(cols):
-                idx = r * cols + c
-                if idx < len(sorted_patches_for_display):
-                    axes_patches[r][c].imshow(sorted_patches_for_display[idx].image)
-                    axes_patches[r][c].set_title(f"{idx}", fontsize=8)
-                    axes_patches[r][c].axis("off")
-        fig_patches.suptitle("ROI 分块后的图像 (按位置排列)", fontsize=12)
-        plt.tight_layout()
-        plt.show(block=False)
+        # for r in range(rows):
+        #     for c in range(cols):
+        #         idx = r * cols + c
+        #         if idx < len(sorted_patches_for_display):
+        #             axes_patches[r][c].imshow(sorted_patches_for_display[idx].image)
+        #             axes_patches[r][c].set_title(f"{idx}", fontsize=8)
+        #             axes_patches[r][c].axis("off")
+        # fig_patches.suptitle("ROI 分块后的图像 (按位置排列)", fontsize=12)
+        # plt.tight_layout()
+        # plt.show(block=False)
         
         # 等待用户关闭窗口
-        print("按 Enter 键退出...", flush=True)
-        input()
+        # print("按 Enter 键退出...", flush=True)
+        # input()
 
 
 if __name__ == "__main__":
