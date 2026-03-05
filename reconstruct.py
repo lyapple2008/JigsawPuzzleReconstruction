@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from typing import Tuple
 
@@ -133,6 +134,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Run reconstruction pipeline from shuffled image to reconstructed output image."""
+    print("Starting reconstruct...", flush=True)
     args = parse_args()
     rows, cols = args.grid
     image_path = Path(args.image)
@@ -144,9 +146,9 @@ def main() -> None:
         roi_result = extract_puzzle_region_with_metadata(image)
         image = roi_result.image
         if roi_result.rows is not None and roi_result.cols is not None:
-            print(f"Extracted puzzle ROI: bbox={roi_result.bbox}, inferred grid={roi_result.rows}x{roi_result.cols}")
+            print(f"Extracted puzzle ROI: bbox={roi_result.bbox}, inferred grid={roi_result.rows}x{roi_result.cols}", flush=True)
         else:
-            print("Extracted puzzle ROI: no regular grid detected, using full image")
+            print("Extracted puzzle ROI: bbox={}, grid inferred from --grid argument".format(roi_result.bbox), flush=True)
     patches, row_ranges, col_ranges = split_with_gap_aware(image, rows=rows, cols=cols)
 
     matcher = EdgeMatcher()
@@ -173,26 +175,32 @@ def main() -> None:
         **solver_kwargs
     )
 
-    solve_result = solver.solve(patches, original_image=original_for_solver, cost_matrix=cost_matrix)
+    try:
+        solve_result = solver.solve(patches, original_image=original_for_solver, cost_matrix=cost_matrix)
+    except ValueError as e:
+        print(f"求解器错误: {e}", flush=True)
+        print("建议: 使用 --solver default 或检查 --grid 与图像尺寸是否匹配。", flush=True)
+        raise
     solved_grid = solve_result.grid
     reconstructed = solve_result.reconstructed_image
     if output_path is not None:
         save_image(output_path, reconstructed)
 
-    print(f"Input image: {image_path}")
-    print(f"Grid: {rows}x{cols}")
-    print(f"Solver: {args.solver}")
-    print(f"Patch size used: {patches[0].image.shape[0]}x{patches[0].image.shape[1]}")
+    print(f"Input image: {image_path}", flush=True)
+    print(f"Grid: {rows}x{cols}", flush=True)
+    print(f"Solver: {args.solver}", flush=True)
+    print(f"Patch size used: {patches[0].image.shape[0]}x{patches[0].image.shape[1]}", flush=True)
     if output_path is not None:
-        print(f"Output image: {output_path.resolve()}")
+        print(f"Output image: {output_path.resolve()}", flush=True)
     else:
-        print("Output image: not saved (no --output specified)")
-    print("Solved grid indices:")
-    print(solved_grid)
+        print("Output image: not saved (no --output specified)", flush=True)
+    print("Solved grid indices:", flush=True)
+    print(solved_grid, flush=True)
 
     if not args.no_show:
         import matplotlib.pyplot as plt
 
+        # 显示原图、打乱图、还原图
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
         axes[0].imshow(original_image)
         axes[0].set_title("原图")
@@ -212,8 +220,38 @@ def main() -> None:
         for ax in axes:
             ax.axis("off")
         plt.tight_layout()
-        plt.show()
+        plt.show(block=False)
+
+        # 显示分块后的图像网格（按原始位置排列）
+        sorted_patches_for_display = sorted(patches, key=lambda p: p.original_index)
+        fig_patches, axes_patches = plt.subplots(rows, cols, figsize=(cols * 1.5, rows * 1.5))
+        if rows == 1 and cols == 1:
+            axes_patches = [[axes_patches]]
+        elif rows == 1:
+            axes_patches = [axes_patches]
+        elif cols == 1:
+            axes_patches = [[ax] for ax in axes_patches]
+        
+        for r in range(rows):
+            for c in range(cols):
+                idx = r * cols + c
+                if idx < len(sorted_patches_for_display):
+                    axes_patches[r][c].imshow(sorted_patches_for_display[idx].image)
+                    axes_patches[r][c].set_title(f"{idx}", fontsize=8)
+                    axes_patches[r][c].axis("off")
+        fig_patches.suptitle("ROI 分块后的图像 (按位置排列)", fontsize=12)
+        plt.tight_layout()
+        plt.show(block=False)
+        
+        # 等待用户关闭窗口
+        print("按 Enter 键退出...", flush=True)
+        input()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc(), flush=True)
+        sys.exit(1)
