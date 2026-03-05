@@ -7,9 +7,9 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
-from .matcher import Direction, EdgeMatcher
-from .position_prior import build_position_penalty
-from .splitter import Patch
+from jigsaw.matcher import Direction, EdgeMatcher
+from jigsaw.position_prior import build_position_penalty
+from jigsaw.splitter import Patch
 
 
 @dataclass

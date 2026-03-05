@@ -11,8 +11,8 @@ import numpy as np
 from jigsaw.gap_splitter import split_with_gap_aware
 from jigsaw.matcher import EdgeMatcher
 from jigsaw.puzzle_roi import extract_puzzle_region_with_metadata
-from jigsaw.solver import JigsawSolver, SolverConfig
-from jigsaw.utils import compose_image_from_grid
+from jigsaw.solver import SolverFactory
+from jigsaw.utils import compose_image_from_grid, compose_image_row_major
 
 try:
     import cv2  # type: ignore
@@ -121,6 +121,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Extract puzzle region from screenshot (UI cropped out) before solving",
     )
+    parser.add_argument(
+        "--solver",
+        type=str,
+        default="default",
+        choices=["default", "gaps"],
+        help="Solver algorithm to use (default or gaps)",
+    )
     return parser.parse_args()
 
 
@@ -144,25 +151,37 @@ def main() -> None:
 
     matcher = EdgeMatcher()
     cost_matrix = matcher.build_cost_matrix(patches)
-    solver = JigsawSolver(
-        SolverConfig(
-            rows=rows,
-            cols=cols,
-            seed=args.seed,
-            local_opt_iters=args.local_opt_iters,
-            use_position_prior=args.use_position_prior,
-            auto_position_prior=args.auto_position_prior,
-            position_prior_samples=args.prior_samples,
-        )
-    )
-    solved_grid = solver.solve(patches, cost_matrix=cost_matrix)
 
-    reconstructed = compose_image_from_grid(solved_grid, patches)
+    # For gaps solver, pass ROI image (after extraction)
+    # Use rectangular piece_size to match the actual patch dimensions
+    sorted_patches = sorted(patches, key=lambda p: p.original_index)
+    solver_kwargs = {}
+    if args.solver == "gaps":
+        original_for_solver = image
+        # Use the actual patch dimensions as piece_size (supports rectangular pieces)
+        patch_h, patch_w = sorted_patches[0].image.shape[:2]
+        solver_kwargs["piece_size"] = (patch_h, patch_w)
+    else:
+        original_for_solver = compose_image_row_major(sorted_patches, rows, cols)
+
+    # Create solver using factory
+    solver = SolverFactory.create(
+        args.solver,
+        rows=rows,
+        cols=cols,
+        seed=args.seed,
+        **solver_kwargs
+    )
+
+    solve_result = solver.solve(patches, original_image=original_for_solver, cost_matrix=cost_matrix)
+    solved_grid = solve_result.grid
+    reconstructed = solve_result.reconstructed_image
     if output_path is not None:
         save_image(output_path, reconstructed)
 
     print(f"Input image: {image_path}")
     print(f"Grid: {rows}x{cols}")
+    print(f"Solver: {args.solver}")
     print(f"Patch size used: {patches[0].image.shape[0]}x{patches[0].image.shape[1]}")
     if output_path is not None:
         print(f"Output image: {output_path.resolve()}")

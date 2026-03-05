@@ -6,7 +6,7 @@ from .matcher import Direction, EdgeMatcher
 from .position_prior import build_position_penalty, train_position_prior
 from .puzzle_roi import PuzzleROIResult, extract_puzzle_region, extract_puzzle_region_with_metadata
 from .roi_color import ColorBasedPuzzleExtractor, extract_puzzle_region_by_color
-from .solver import JigsawSolver, SolverConfig
+from .solver.jigsaw_solver import JigsawSolver, SolverConfig
 from .splitter import Patch, PuzzleSplitter
 
 __all__ = [

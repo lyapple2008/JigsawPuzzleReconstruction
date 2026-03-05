@@ -10,10 +10,9 @@ import matplotlib.pyplot as plt
 from jigsaw.evaluator import PuzzleEvaluator
 from jigsaw.matcher import EdgeMatcher
 from jigsaw.puzzle_roi import extract_puzzle_region_with_metadata
-from jigsaw.solver import JigsawSolver, SolverConfig
+from jigsaw.solver import SolverFactory
 from jigsaw.splitter import PuzzleSplitter
 from jigsaw.utils import (
-    compose_image_from_grid,
     compose_image_row_major,
     load_or_generate_image,
     shuffle_patches,
@@ -29,6 +28,7 @@ def run_demo(
     image_path: str | None = None,
     grid_size: int = 5,
     extract_roi: bool = False,
+    solver_name: str = "default",
 ) -> None:
     """Run full pipeline and display original/shuffled/reconstructed images."""
     if extract_roi and image_path and cv2 is not None:
@@ -52,20 +52,28 @@ def run_demo(
 
     matcher = EdgeMatcher()
     cost_matrix = matcher.build_cost_matrix(shuffled_patches)
-    solver = JigsawSolver(
-        SolverConfig(rows=grid_size, cols=grid_size, seed=42, local_opt_iters=1000)
+
+    # Create solver using factory
+    solver = SolverFactory.create(
+        solver_name,
+        rows=grid_size,
+        cols=grid_size,
+        seed=42,
     )
 
     start = time.perf_counter()
-    solved_grid = solver.solve(shuffled_patches, cost_matrix=cost_matrix)
+    solve_result = solver.solve(shuffled_patches, cost_matrix=cost_matrix)
     duration = time.perf_counter() - start
+
+    solved_grid = solve_result.grid
+    reconstructed_image = solve_result.reconstructed_image
 
     evaluator = PuzzleEvaluator()
     result = evaluator.evaluate(solved_grid, shuffled_patches, cost_matrix)
 
     shuffled_image = compose_image_row_major(shuffled_patches, grid_size, grid_size)
-    reconstructed_image = compose_image_from_grid(solved_grid, shuffled_patches)
 
+    print(f"Solver: {solver_name}")
     print(f"Grid size: {grid_size}x{grid_size}")
     print(f"Position accuracy: {result.position_accuracy:.4f}")
     print(f"Neighbor accuracy: {result.neighbor_accuracy:.4f}")
@@ -91,6 +99,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image", type=str, default=None, help="Optional input image path")
     parser.add_argument("--grid-size", type=int, default=5, help="Puzzle grid size, default=5")
     parser.add_argument(
+        "--solver",
+        type=str,
+        default="default",
+        choices=["default", "gaps"],
+        help="Solver algorithm to use (default or gaps)",
+    )
+    parser.add_argument(
         "--extract-roi",
         action="store_true",
         help="Extract puzzle region from screenshot before running demo",
@@ -104,4 +119,5 @@ if __name__ == "__main__":
         image_path=args.image,
         grid_size=args.grid_size,
         extract_roi=args.extract_roi,
+        solver_name=args.solver,
     )

@@ -54,7 +54,7 @@ project_root/
 
 **所有代码请在 conda 环境名为 `jigsaw` 中执行。**
 
-运行任何脚本、测试或 demo 前，请先激活该环境：
+运行任何脚本、测试或 demo 前，请先激活该环境，使用python3执行python脚本：
 
 ```bash
 conda activate jigsaw
