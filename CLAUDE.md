@@ -65,8 +65,8 @@ conda activate jigsaw
 ```bash
 conda activate jigsaw
 pip install -r requirements.txt   # 若依赖未安装
-python demo.py --image examples/IMG_0970.PNG --extract-roi
-python -m pytest tests/ -v
+python3 demo.py --image examples/IMG_0970.PNG --extract-roi
+python3 -m pytest tests/ -v
 ```
 
 ---

@@ -45,9 +45,6 @@ class PuzzleSplitter:
         patch_h = height // rows
         patch_w = width // cols
 
-        if patch_h != patch_w:
-            raise ValueError("patches must be square; choose rows/cols accordingly")
-
         patches: List[Patch] = []
         index = 0
         for r in range(rows):

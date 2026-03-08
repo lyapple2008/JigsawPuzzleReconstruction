@@ -188,3 +188,7 @@
    - 速度快，适合大规模拼图
 
 3. **进阶**：可尝试深度学习方法提升准确率
+
+
+## 待尝试
+1. https://github.com/juliennonin/jigsaw-puzzle-solver?tab=readme-ov-file
