@@ -208,7 +208,7 @@ def main() -> None:
         # 显示原图、打乱图、还原图
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
         axes[0].imshow(original_image)
-        axes[0].set_title("原图")
+        axes[0].set_title("Original Image")
 
         display_image = image.copy()
         if args.show_grid:
@@ -221,7 +221,7 @@ def main() -> None:
         axes[1].imshow(display_image)
         axes[1].set_title("Shuffled Input")
         axes[2].imshow(reconstructed)
-        axes[2].set_title("还原后的图像")
+        axes[2].set_title("Reconstructed")
         for ax in axes:
             ax.axis("off")
         plt.tight_layout()
