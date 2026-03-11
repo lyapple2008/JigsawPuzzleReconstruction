@@ -173,15 +173,16 @@ def degrade_observation(image: np.ndarray, seed: int = 42, mode: str = "challeng
     return out
 
 
-def load_or_generate_image(path: Optional[str], size: int = 300, seed: int = 42) -> np.ndarray:
-    """Load image from path, or generate a natural-like fallback image."""
+def load_or_generate_image(path: Optional[str], size: Optional[int] = 300, seed: int = 42) -> np.ndarray:
+    """Load image from path at original size (if size=None), or generate a natural-like fallback image."""
     if path:
         if cv2 is not None:
             image = cv2.imread(path, cv2.IMREAD_COLOR)
             if image is None:
                 raise ValueError(f"Failed to load image from path: {path}")
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            if image.shape[0] != size or image.shape[1] != size:
+            # Only resize if size is specified and different from original
+            if size is not None and (image.shape[0] != size or image.shape[1] != size):
                 image = cv2.resize(image, (size, size), interpolation=cv2.INTER_AREA)
             return image
 
@@ -196,9 +197,10 @@ def load_or_generate_image(path: Optional[str], size: int = 300, seed: int = 42)
             image = np.repeat(image[:, :, None], 3, axis=2)
         if image.shape[2] > 3:
             image = image[:, :, :3]
-        if image.shape[0] != size or image.shape[1] != size:
+        # Only resize if size is specified
+        if size is not None and (image.shape[0] != size or image.shape[1] != size):
             y_idx = np.linspace(0, image.shape[0] - 1, size).astype(np.int32)
             x_idx = np.linspace(0, image.shape[1] - 1, size).astype(np.int32)
             image = image[y_idx][:, x_idx]
         return image
-    return generate_natural_like_image(size=size, seed=seed)
+    return generate_natural_like_image(size=size if size is not None else 300, seed=seed)

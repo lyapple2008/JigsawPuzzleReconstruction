@@ -60,15 +60,19 @@ def run_demo(
         image = roi_result.image
         if roi_result.rows is not None and roi_result.cols is not None:
             print(f"Extracted puzzle ROI: bbox={roi_result.bbox}, inferred grid={roi_result.rows}x{roi_result.cols}")
-        side = (300 // grid_size) * grid_size
-        if side < grid_size:
-            side = grid_size * 60
-        image = cv2.resize(image, (side, side), interpolation=cv2.INTER_AREA)
+    elif image_path:
+        # Load image at original size
+        image = load_or_generate_image(image_path, size=None, seed=42)
     else:
-        image = load_or_generate_image(image_path, size=300, seed=42)
+        # Generate image with size based on grid to ensure enough patches
+        min_size = max(rows, cols) * 60  # At least 60 pixels per patch
+        image = load_or_generate_image(None, size=min_size, seed=42)
+
+    # Print input image size
+    h, w = image.shape[:2]
+    print(f"Input image size: {w}x{h} (WxH)")
 
     # Handle non-divisible image dimensions
-    h, w = image.shape[:2]
     patch_height = h // rows
     patch_width = w // cols
 
@@ -89,6 +93,11 @@ def run_demo(
         image = image[start_h:start_h + crop_h, start_w:start_w + crop_w]
         if rows != patch_height or cols != patch_width:
             print(f"Note: Image cropped from {h}x{w} to {crop_h}x{crop_w} for grid {rows}x{cols}")
+
+    # Print processed image size and patch size
+    h, w = image.shape[:2]
+    print(f"Processed image size: {w}x{h} (WxH)")
+    print(f"Patch size: {patch_width}x{patch_height} (WxH)")
 
     splitter = PuzzleSplitter()
     patches = splitter.split(image, rows, cols)
