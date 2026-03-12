@@ -46,6 +46,8 @@ def run_demo(
     grid: Tuple[int, int] = (5, 5),
     extract_roi: bool = False,
     solver_name: str = "default",
+    visualize: bool = False,
+    save_gif: str | None = None,
 ) -> None:
     """Run full pipeline and display original/shuffled/reconstructed images."""
     rows, cols = grid
@@ -107,12 +109,18 @@ def run_demo(
     cost_matrix = matcher.build_cost_matrix(shuffled_patches)
 
     # Create solver using factory
-    solver = SolverFactory.create(
-        solver_name,
-        rows=rows,
-        cols=cols,
-        seed=42,
-    )
+    solver_config = {
+        "rows": rows,
+        "cols": cols,
+        "seed": 42,
+    }
+
+    # Add visualization options for gaps solver
+    if solver_name == "gaps":
+        solver_config["visualize"] = visualize
+        solver_config["save_gif"] = save_gif
+
+    solver = SolverFactory.create(solver_name, **solver_config)
 
     start = time.perf_counter()
     solve_result = solver.solve(shuffled_patches, cost_matrix=cost_matrix)
@@ -168,6 +176,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Extract puzzle region from screenshot before running demo",
     )
+    parser.add_argument(
+        "--visualize",
+        action="store_true",
+        help="Show real-time visualization of solving process (gaps solver only)",
+    )
+    parser.add_argument(
+        "--save-gif",
+        type=str,
+        default=None,
+        help="Path to save GIF animation of solving process (gaps solver only)",
+    )
     return parser.parse_args()
 
 
@@ -178,4 +197,6 @@ if __name__ == "__main__":
         grid=args.grid,
         extract_roi=args.extract_roi,
         solver_name=args.solver,
+        visualize=args.visualize,
+        save_gif=args.save_gif,
     )

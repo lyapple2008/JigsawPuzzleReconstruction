@@ -25,7 +25,14 @@ class GeneticAlgorithm(object):
         ]
         self._pieces = pieces
 
-    def start_evolution(self, verbose):
+    def start_evolution(self, verbose, generation_callback=None):
+        """Start the genetic algorithm evolution.
+
+        Args:
+            verbose: Whether to display progress visualization
+            generation_callback: Optional callback function called after each generation.
+                                 Signature: callback(generation, fitness, image)
+        """
         print("=== Pieces:      {}\n".format(len(self._pieces)))
 
         if verbose:
@@ -75,6 +82,10 @@ class GeneticAlgorithm(object):
                 return fittest
 
             self._population = new_population
+
+            # Call generation callback if provided
+            if generation_callback:
+                generation_callback(generation, fittest.fitness, fittest.to_image())
 
             if verbose:
                 plot.show_fittest(
