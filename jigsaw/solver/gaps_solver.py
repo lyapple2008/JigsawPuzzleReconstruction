@@ -83,7 +83,11 @@ class GapsSolver(BaseSolver):
 
         # Calculate piece_size - supports both square (int) and rectangular (tuple)
         if self._piece_size is not None:
-            piece_size = self._piece_size
+            # User provided piece_size, convert from (height, width) to (width, height) if needed
+            if isinstance(self._piece_size, tuple):
+                piece_size = (self._piece_size[1], self._piece_size[0])  # (h, w) -> (w, h)
+            else:
+                piece_size = self._piece_size
         else:
             # Auto-calculate piece_size from image dimensions to match grid
             height, width = shuffled_image.shape[:2]
