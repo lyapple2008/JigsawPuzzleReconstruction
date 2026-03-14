@@ -68,38 +68,38 @@ class GapsSolver(BaseSolver):
 
         Args:
             patches: List of shuffled patches
-            original_image: Original image (will be reconstructed from patches if not provided)
+            original_image: Not used (kept for API compatibility)
             **kwargs: Additional parameters (ignored)
 
         Returns:
             SolveResult with grid and reconstructed image
         """
-        # Reconstruct original image from patches if not provided
-        if original_image is None:
-            sorted_patches = sorted(patches, key=lambda p: p.original_index)
-            original_image = compose_image_from_grid(
-                np.arange(len(patches)).reshape(self.rows, self.cols),
-                sorted_patches
-            )
+        # Build shuffled image from shuffled patches (not sorted)
+        # This is the image that gaps needs to solve - it's already shuffled
+        shuffled_image = compose_image_from_grid(
+            np.arange(len(patches)).reshape(self.rows, self.cols),
+            patches
+        )
 
         # Calculate piece_size - supports both square (int) and rectangular (tuple)
         if self._piece_size is not None:
             piece_size = self._piece_size
         else:
             # Auto-calculate piece_size from image dimensions to match grid
-            height, width = original_image.shape[:2]
+            height, width = shuffled_image.shape[:2]
             # Use integer division to ensure pieces fit exactly
             piece_h = height // self.rows
             piece_w = width // self.cols
             # Use tuple for rectangular pieces, or int for square
+            # Note: gaps expects (width, height) format
             if piece_h == piece_w:
                 piece_size = piece_h
             else:
-                piece_size = (piece_h, piece_w)
+                piece_size = (piece_w, piece_h)
 
-        # Run genetic algorithm
+        # Run genetic algorithm on shuffled image
         ga = GeneticAlgorithm(
-            image=original_image,
+            image=shuffled_image,
             piece_size=piece_size,
             population_size=self.population_size,
             generations=self.generations,
@@ -148,18 +148,35 @@ class GapsSolver(BaseSolver):
 
         grid = np.zeros((rows, cols), dtype=int)
 
-        # Create mapping from piece id to original patch index
-        # piece id in gaps corresponds to original_index of patches
-        id_to_index = {p.original_index: i for i, p in enumerate(original_patches)}
+        # Create mapping from piece image to original patch index
+        # Since gaps receives shuffled image, piece.id is based on position (0,1,2...)
+        # not original_index, so we need to match by image content
+        # Use tuple of flattened image as key for faster comparison
+        patch_image_keys = {
+            tuple(p.image.flatten()): i for i, p in enumerate(original_patches)
+        }
+
+        # Get the list of pieces from individual (in order of piece id)
+        pieces = individual.pieces
 
         for row in range(rows):
             for col in range(cols):
                 piece = individual[row][col]
-                if piece.id not in id_to_index:
-                    raise KeyError(
-                        f"Piece id {piece.id} not found in original patches. "
-                        f"Available ids: {list(id_to_index.keys())[:10]}..."
-                    )
-                grid[row, col] = id_to_index[piece.id]
+                piece_image_key = tuple(piece.image.flatten())
+
+                if piece_image_key not in patch_image_keys:
+                    # Try to find by comparing with all patches
+                    found = False
+                    for i, p in enumerate(original_patches):
+                        if np.array_equal(p.image, piece.image):
+                            grid[row, col] = i
+                            found = True
+                            break
+                    if not found:
+                        raise KeyError(
+                            f"Piece image at ({row},{col}) not found in original patches"
+                        )
+                else:
+                    grid[row, col] = patch_image_keys[piece_image_key]
 
         return grid

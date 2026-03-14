@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
@@ -68,8 +68,15 @@ class PuzzleEvaluator:
 
         return correct / total if total else 0.0
 
-    def evaluate(self, grid: np.ndarray, patches: List[Patch], cost_matrix: np.ndarray) -> EvaluationResult:
+    def evaluate(
+        self,
+        grid: np.ndarray,
+        patches: List[Patch],
+        cost_matrix: Optional[np.ndarray] = None,
+    ) -> EvaluationResult:
         """Calculate all required metrics for a reconstructed puzzle."""
+        if cost_matrix is None:
+            cost_matrix = self.matcher.build_cost_matrix(patches)
         return EvaluationResult(
             position_accuracy=self.compute_position_accuracy(grid, patches),
             neighbor_accuracy=self.compute_neighbor_accuracy(grid, patches),

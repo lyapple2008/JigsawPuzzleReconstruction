@@ -9,7 +9,6 @@ from typing import Tuple
 import matplotlib.pyplot as plt
 
 from jigsaw.evaluator import PuzzleEvaluator
-from jigsaw.matcher import EdgeMatcher
 from jigsaw.puzzle_roi import extract_puzzle_region_with_metadata
 from jigsaw.solver import SolverFactory
 from jigsaw.splitter import PuzzleSplitter
@@ -49,7 +48,6 @@ def run_demo(
 ) -> None:
     """Run full pipeline and display original/shuffled/reconstructed images."""
     rows, cols = grid
-    grid_size = max(rows, cols)  # For backward compatibility
 
     if extract_roi and image_path and cv2 is not None:
         raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
@@ -103,10 +101,6 @@ def run_demo(
     patches = splitter.split(image, rows, cols)
     shuffled_patches, _ = shuffle_patches(patches, seed=42)
 
-    matcher = EdgeMatcher()
-    cost_matrix = matcher.build_cost_matrix(shuffled_patches)
-
-    # Create solver using factory
     solver = SolverFactory.create(
         solver_name,
         rows=rows,
@@ -115,14 +109,14 @@ def run_demo(
     )
 
     start = time.perf_counter()
-    solve_result = solver.solve(shuffled_patches, cost_matrix=cost_matrix)
+    solve_result = solver.solve(shuffled_patches)
     duration = time.perf_counter() - start
 
     solved_grid = solve_result.grid
     reconstructed_image = solve_result.reconstructed_image
 
     evaluator = PuzzleEvaluator()
-    result = evaluator.evaluate(solved_grid, shuffled_patches, cost_matrix)
+    result = evaluator.evaluate(solved_grid, shuffled_patches)
 
     shuffled_image = compose_image_row_major(shuffled_patches, rows, cols)
 
