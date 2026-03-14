@@ -10,10 +10,8 @@ from typing import Tuple
 import numpy as np
 
 from jigsaw.gap_splitter import split_with_gap_aware
-from jigsaw.matcher import EdgeMatcher
 from jigsaw.puzzle_roi import extract_puzzle_region_with_metadata
 from jigsaw.solver import SolverFactory
-from jigsaw.utils import compose_image_from_grid, compose_image_row_major
 
 try:
     import cv2  # type: ignore
@@ -151,25 +149,12 @@ def main() -> None:
             print("Extracted puzzle ROI: bbox={}, grid inferred from --grid argument".format(roi_result.bbox), flush=True)
     patches, row_ranges, col_ranges = split_with_gap_aware(image, rows=rows, cols=cols)
 
-    matcher = EdgeMatcher()
-    cost_matrix = matcher.build_cost_matrix(patches)
-
-    sorted_patches = sorted(patches, key=lambda p: p.original_index)
+    # Build solver kwargs
     solver_kwargs = {}
-
-    # For gaps solver, pass reconstructed image from patches (no gaps)
-    # Use rectangular piece_size to match the actual patch dimensions
     if args.solver == "gaps":
-        # 关键修复：将分块后的图像重新拼接，排除缝隙
-        original_for_solver = compose_image_from_grid(
-            np.arange(len(patches)).reshape(rows, cols),
-            sorted_patches
-        )
-        # 使用等分方式计算 piece_size（因为现在图像已经没有缝隙了）
-        patch_h, patch_w = sorted_patches[0].image.shape[:2]
+        # Get patch dimensions for gaps solver
+        patch_h, patch_w = patches[0].image.shape[:2]
         solver_kwargs["piece_size"] = (patch_h, patch_w)
-    else:
-        original_for_solver = compose_image_row_major(sorted_patches, rows, cols)
 
     # Create solver using factory
     solver = SolverFactory.create(
@@ -181,7 +166,7 @@ def main() -> None:
     )
 
     try:
-        solve_result = solver.solve(patches, original_image=original_for_solver, cost_matrix=cost_matrix)
+        solve_result = solver.solve(patches)
     except ValueError as e:
         print(f"求解器错误: {e}", flush=True)
         print("建议: 使用 --solver default 或检查 --grid 与图像尺寸是否匹配。", flush=True)
@@ -226,31 +211,6 @@ def main() -> None:
             ax.axis("off")
         plt.tight_layout()
         plt.show(block=True)
-
-        # 显示分块后的图像网格（按原始位置排列）
-        # sorted_patches_for_display = sorted(patches, key=lambda p: p.original_index)
-        # fig_patches, axes_patches = plt.subplots(rows, cols, figsize=(cols * 1.5, rows * 1.5))
-        # if rows == 1 and cols == 1:
-        #     axes_patches = [[axes_patches]]
-        # elif rows == 1:
-        #     axes_patches = [axes_patches]
-        # elif cols == 1:
-        #     axes_patches = [[ax] for ax in axes_patches]
-        
-        # for r in range(rows):
-        #     for c in range(cols):
-        #         idx = r * cols + c
-        #         if idx < len(sorted_patches_for_display):
-        #             axes_patches[r][c].imshow(sorted_patches_for_display[idx].image)
-        #             axes_patches[r][c].set_title(f"{idx}", fontsize=8)
-        #             axes_patches[r][c].axis("off")
-        # fig_patches.suptitle("ROI 分块后的图像 (按位置排列)", fontsize=12)
-        # plt.tight_layout()
-        # plt.show(block=False)
-        
-        # 等待用户关闭窗口
-        # print("按 Enter 键退出...", flush=True)
-        # input()
 
 
 if __name__ == "__main__":
