@@ -38,21 +38,21 @@ def dissimilarity_measure(first_piece, second_piece, orientation="LR", border_wi
 
     # | L | - | R |
     if orientation == "LR":
-        # Use right edge of first_piece and left edge of second_piece
+        # Compare right edge of first_piece (left in arrangement) with left edge of second_piece (right in arrangement)
         # border_width=1: use columns-1 and 0 (outermost)
         # border_width>1: use columns-border_width and 0:border_width (inner)
-        left_edge = first_piece[:, columns - border_width:, :]
-        right_edge = second_piece[:, :border_width, :]
-        color_difference = left_edge - right_edge
+        right_edge_of_first = first_piece[:, columns - border_width:, :]
+        left_edge_of_second = second_piece[:, :border_width, :]
+        color_difference = right_edge_of_first - left_edge_of_second
 
     # | T |
     #   |
     # | D |
     if orientation == "TD":
-        # Use bottom edge of first_piece and top edge of second_piece
-        bottom_edge = first_piece[rows - border_width:, :, :]
-        top_edge = second_piece[:border_width, :, :]
-        color_difference = bottom_edge - top_edge
+        # Compare bottom edge of first_piece (top in arrangement) with top edge of second_piece (bottom in arrangement)
+        bottom_edge_of_first = first_piece[rows - border_width:, :, :]
+        top_edge_of_second = second_piece[:border_width, :, :]
+        color_difference = bottom_edge_of_first - top_edge_of_second
 
     squared_color_difference = np.power(color_difference / 255.0, 2)
     color_difference_per_row = np.sum(squared_color_difference, axis=(1, 2))
