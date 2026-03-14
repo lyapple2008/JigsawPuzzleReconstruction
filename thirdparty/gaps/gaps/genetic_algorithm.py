@@ -15,11 +15,12 @@ from gaps.selection import roulette_selection
 class GeneticAlgorithm(object):
     TERMINATION_THRESHOLD = 10
 
-    def __init__(self, image, piece_size, population_size, generations, elite_size=2):
+    def __init__(self, image, piece_size, population_size, generations, elite_size=2, border_width=1):
         self._image = image
         self._piece_size = piece_size
         self._generations = generations
         self._elite_size = elite_size
+        self._border_width = border_width
         pieces, rows, columns = utils.flatten_image(image, piece_size, indexed=True)
         self._population = [
             Individual(pieces, rows, columns) for _ in range(population_size)
@@ -32,7 +33,7 @@ class GeneticAlgorithm(object):
         if verbose:
             plot = Plot(self._image)
 
-        ImageAnalysis.analyze_image(self._pieces)
+        ImageAnalysis.analyze_image(self._pieces, border_width=self._border_width)
 
         fittest = None
         best_fitness_score = float("-inf")

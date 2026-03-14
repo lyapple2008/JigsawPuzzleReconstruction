@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def dissimilarity_measure(first_piece, second_piece, orientation="LR"):
+def dissimilarity_measure(first_piece, second_piece, orientation="LR", border_width=1):
     """Calculates color difference over all neighboring pixels over all color channels.
 
     The dissimilarity measure relies on the premise that adjacent jigsaw pieces
@@ -17,6 +17,8 @@ def dissimilarity_measure(first_piece, second_piece, orientation="LR"):
 
                           LR => 'Left - Right'
                           TD => 'Top - Down'
+    :params border_width: Number of pixel rows/cols from edge to use (default: 1).
+                         If > 1, uses N pixels inward from the edge.
 
     Usage::
 
@@ -24,27 +26,36 @@ def dissimilarity_measure(first_piece, second_piece, orientation="LR"):
         >>> from gaps.piece import Piece
         >>> p1, p2 = Piece(), Piece()
         >>> dissimilarity_measure(p1, p2, orientation="TD")
+        >>> dissimilarity_measure(p1, p2, orientation="LR", border_width=3)
 
     """
     rows, columns, _ = first_piece.shape()
+
+    # Clamp border_width to valid range
+    border_width = max(1, min(border_width, min(rows, columns)))
+
     color_difference = None
 
     # | L | - | R |
     if orientation == "LR":
-        color_difference = (
-            first_piece[:rows, columns - 1, :] - second_piece[:rows, 0, :]
-        )
+        # Use right edge of first_piece and left edge of second_piece
+        # border_width=1: use columns-1 and 0 (outermost)
+        # border_width>1: use columns-border_width and 0:border_width (inner)
+        left_edge = first_piece[:, columns - border_width:, :]
+        right_edge = second_piece[:, :border_width, :]
+        color_difference = left_edge - right_edge
 
     # | T |
     #   |
     # | D |
     if orientation == "TD":
-        color_difference = (
-            first_piece[rows - 1, :columns, :] - second_piece[0, :columns, :]
-        )
+        # Use bottom edge of first_piece and top edge of second_piece
+        bottom_edge = first_piece[rows - border_width:, :, :]
+        top_edge = second_piece[:border_width, :, :]
+        color_difference = bottom_edge - top_edge
 
     squared_color_difference = np.power(color_difference / 255.0, 2)
-    color_difference_per_row = np.sum(squared_color_difference, axis=1)
+    color_difference_per_row = np.sum(squared_color_difference, axis=(1, 2))
     total_difference = np.sum(color_difference_per_row, axis=0)
 
     value = np.sqrt(total_difference)

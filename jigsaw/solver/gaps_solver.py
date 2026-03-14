@@ -35,6 +35,7 @@ class GapsSolver(BaseSolver):
         population_size: int = 200,
         generations: int = 20,
         elite_size: int = 2,
+        border_width: int = 1,
         **kwargs
     ):
         """Initialize the gaps solver.
@@ -49,6 +50,7 @@ class GapsSolver(BaseSolver):
             population_size: Number of individuals in genetic algorithm
             generations: Number of evolution generations
             elite_size: Number of elite individuals to preserve
+            border_width: Number of edge pixels to use for dissimilarity (default: 1)
             **kwargs: Additional parameters (ignored)
         """
         self.rows = rows
@@ -57,6 +59,7 @@ class GapsSolver(BaseSolver):
         self.population_size = population_size
         self.generations = generations
         self.elite_size = elite_size
+        self.border_width = border_width
 
     def solve(
         self,
@@ -107,7 +110,8 @@ class GapsSolver(BaseSolver):
             piece_size=piece_size,
             population_size=self.population_size,
             generations=self.generations,
-            elite_size=self.elite_size
+            elite_size=self.elite_size,
+            border_width=self.border_width
         )
         result_individual: Individual = ga.start_evolution(verbose=False)
 

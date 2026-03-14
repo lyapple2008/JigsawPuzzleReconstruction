@@ -21,14 +21,14 @@ class ImageAnalysis(object):
     best_match_table: Dict[int, Dict[str, List[Tuple[int, float]]]] = {}
 
     @classmethod
-    def analyze_image(cls, pieces):
+    def analyze_image(cls, pieces, border_width=1):
         for piece in pieces:
             # For each edge we keep best matches as a sorted list.
             # Edges with lower dissimilarity_measure have higher priority.
             cls.best_match_table[piece.id] = {"T": [], "R": [], "D": [], "L": []}
 
         def update_best_match_table(first_piece, second_piece):
-            measure = dissimilarity_measure(first_piece, second_piece, orientation)
+            measure = dissimilarity_measure(first_piece, second_piece, orientation, border_width)
             cls.put_dissimilarity(
                 (first_piece.id, second_piece.id), orientation, measure
             )

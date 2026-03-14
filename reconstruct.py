@@ -127,6 +127,12 @@ def parse_args() -> argparse.Namespace:
         choices=["default", "gaps"],
         help="Solver algorithm to use (default or gaps)",
     )
+    parser.add_argument(
+        "--border-width",
+        type=int,
+        default=1,
+        help="Number of edge pixels to use for dissimilarity in gaps solver (default: 1)",
+    )
     return parser.parse_args()
 
 
@@ -155,6 +161,7 @@ def main() -> None:
         # Get patch dimensions for gaps solver
         patch_h, patch_w = patches[0].image.shape[:2]
         solver_kwargs["piece_size"] = (patch_h, patch_w)
+        solver_kwargs["border_width"] = args.border_width
 
     # Create solver using factory
     solver = SolverFactory.create(
