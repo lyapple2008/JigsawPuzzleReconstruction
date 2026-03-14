@@ -22,8 +22,8 @@ class Piece(object):
         return self.image.__getitem__(index)
 
     def size(self):
-        """Returns piece size"""
-        return self.image.shape[0]
+        """Returns piece size as (height, width) tuple"""
+        return self.image.shape[:2]  # (height, width)
 
     def shape(self):
         """Returns shape of piece's image"""

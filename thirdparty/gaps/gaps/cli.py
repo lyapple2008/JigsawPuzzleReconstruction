@@ -23,14 +23,47 @@ def cli() -> None:
     """Solve or create puzzles with square pieces."""
 
 
-def _validate_piece_size(_context: click.Context, _param: str, value: int) -> int:
-    if value < MIN_PIECE_SIZE:
-        raise click.BadParameter(f"Minimum piece size is {MIN_PIECE_SIZE} pixels")
+def _parse_piece_size(value):
+    """Parse piece_size from string format like '32' or '64x32'.
 
-    if value > MAX_PIECE_SIZE:
-        raise click.BadParameter(f"Maximum piece size is {MAX_PIECE_SIZE} pixels")
+    Returns (width, height) tuple.
+    """
+    if value is None:
+        return None
 
-    return value
+    if isinstance(value, tuple):
+        return value
+
+    # Handle string format
+    if isinstance(value, str):
+        if 'x' in value.lower():
+            parts = value.lower().split('x')
+            if len(parts) != 2:
+                raise ValueError("Invalid piece size format. Use 'WxH' (e.g., '64x32')")
+            return (int(parts[0]), int(parts[1]))
+        else:
+            # Single value means square piece
+            return (int(value), int(value))
+
+    # Integer means square piece
+    return (value, value)
+
+
+def _validate_piece_size(_context: click.Context, _param: str, value):
+    """Validate piece_size and return (width, height) tuple."""
+    if value is None:
+        return value
+
+    parsed = _parse_piece_size(value)
+
+    # Validate each dimension
+    for dim in parsed:
+        if dim < MIN_PIECE_SIZE:
+            raise click.BadParameter(f"Minimum piece size is {MIN_PIECE_SIZE} pixels")
+        if dim > MAX_PIECE_SIZE:
+            raise click.BadParameter(f"Maximum piece size is {MAX_PIECE_SIZE} pixels")
+
+    return parsed
 
 
 def _validate_positive_integer(_context: click.Context, _param: str, value: int) -> int:
@@ -46,8 +79,8 @@ def _validate_positive_integer(_context: click.Context, _param: str, value: int)
 @click.option(
     "-s",
     "--size",
-    type=int,
-    help="Size of single square puzzle piece in pixels. Autodetected if not specified.",
+    type=str,
+    help="Size of puzzle piece(s). Can be integer (square), 'WxH' (rectangular), or autodetected.",
 )
 @click.option(
     "-g",
@@ -78,7 +111,7 @@ def _validate_positive_integer(_context: click.Context, _param: str, value: int)
 def run(
     puzzle: str,
     solution: str,
-    size: int,
+    size,
     generations: int,
     population: int,
     debug: bool,
@@ -86,12 +119,13 @@ def run(
     """Run puzzle solver.
 
     \b
-    PUZZLE is the input puzzle image with square pieces.
+    PUZZLE is the input puzzle image with puzzle pieces.
     SOLUTION is the output image file for solved puzzle.
 
     Examples:
 
     $ gaps run puzzle.jpg solution.jpg --size=32 --generations=100 --population=1000
+    $ gaps run puzzle.jpg solution.jpg --size=64x32
 
     """
 
@@ -99,11 +133,12 @@ def run(
 
     if size is None:
         detector = SizeDetector(input_puzzle)
-        size = detector.detect()
+        detected = detector.detect()
+        size = (detected, detected)
 
     click.echo(f"Population: {population}")
     click.echo(f"Generations: {generations}")
-    click.echo(f"Piece size: {size}")
+    click.echo(f"Piece size: {size[0]}x{size[1]}")
 
     ga = GeneticAlgorithm(
         image=input_puzzle,
@@ -125,22 +160,23 @@ def run(
 @click.option(
     "-s",
     "--size",
-    type=int,
+    type=str,
     show_default=True,
-    default=MAX_PIECE_SIZE,
+    default=str(MAX_PIECE_SIZE),
     callback=_validate_piece_size,
-    help="Size of single square puzzle piece in pixels.",
+    help="Size of puzzle piece(s). Can be integer (square) or 'WxH' (rectangular).",
 )
-def create(image: str, puzzle: str, size: int) -> None:
-    """Create jigsaw puzzle with square pieces.
+def create(image: str, puzzle: str, size) -> None:
+    """Create jigsaw puzzle with puzzle pieces.
 
     \b
     IMAGE is the input image file to create puzzle.
-    PUZZLE is the output puzzle image with square pieces.
+    PUZZLE is the output puzzle image with puzzle pieces.
 
     Examples:
 
     $ gaps create image.jpg puzzle.jpg --size=32
+    $ gaps create image.jpg puzzle.jpg --size=64x32
 
     """
 

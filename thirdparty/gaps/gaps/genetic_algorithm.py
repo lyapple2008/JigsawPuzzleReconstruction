@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import time
 from operator import attrgetter
 
 from gaps import utils
@@ -81,6 +82,7 @@ class GeneticAlgorithm(object):
                     fittest.to_image(),
                     "Generation: {} / {}".format(generation + 1, self._generations),
                 )
+                time.sleep(3)
 
         return fittest
 

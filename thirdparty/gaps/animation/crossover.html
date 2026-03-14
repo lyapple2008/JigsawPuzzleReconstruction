@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crossover 交叉算法可视化</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #00d9ff;
+            text-shadow: 0 0 10px rgba(0, 217, 255, 0.5);
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        /* 父代对比区域样式 */
+        .parents-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            margin-bottom: 10px;
+        }
+
+        .parent-box {
+            text-align: center;
+        }
+
+        .parent-box h3 {
+            color: #00d9ff;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .result-box h3 {
+            color: #00ff88;
+        }
+
+        .mini-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 20px);
+            grid-template-rows: repeat(6, 20px);
+            gap: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px;
+            border-radius: 4px;
+        }
+
+        .mini-cell {
+            width: 20px;
+            height: 20px;
+            border-radius: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 6px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .mini-cell.kernel {
+            background: #00d9ff;
+            color: #000;
+        }
+
+        .mini-cell.highlight {
+            background: #ff6b6b;
+            animation: blink 0.5s infinite;
+        }
+
+        .mini-cell.selected {
+            background: #00ff88;
+            color: #000;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .compare-arrow {
+            font-size: 24px;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .compare-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px 20px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .compare-label {
+            color: #00d9ff;
+            margin-right: 10px;
+        }
+
+        #compare-reason {
+            color: #fff;
+        }
+
+        .grid-container {
+            position: relative;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(6, 60px);
+            grid-template-rows: repeat(6, 60px);
+            gap: 4px;
+        }
+
+        .cell {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .cell.empty {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+        }
+
+        .cell.kernel {
+            background: linear-gradient(135deg, #00d9ff 0%, #0099cc 100%);
+            box-shadow: 0 4px 15px rgba(0, 217, 255, 0.4);
+            animation: popIn 0.3s ease;
+        }
+
+        .cell.candidate {
+            background: linear-gradient(135deg, #ff6b6b 0%, #cc4444 100%);
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+            animation: pulse 1s infinite;
+        }
+
+        .cell.shared {
+            background: linear-gradient(135deg, #00ff88 0%, #00cc66 100%);
+            box-shadow: 0 4px 15px rgba(0, 255, 136, 0.4);
+        }
+
+        .cell.buddy {
+            background: linear-gradient(135deg, #ffd93d 0%, #cc9900 100%);
+            box-shadow: 0 4px 15px rgba(255, 217, 61, 0.4);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .info-panel {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .info-box {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px 20px;
+            min-width: 150px;
+        }
+
+        .info-box h3 {
+            color: #00d9ff;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .info-box .value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+
+        button.play {
+            background: linear-gradient(135deg, #00d9ff 0%, #0099cc 100%);
+            color: white;
+        }
+
+        button.reset {
+            background: linear-gradient(135deg, #ff6b6b 0%, #cc4444 100%);
+            color: white;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .log-container {
+            width: 100%;
+            max-width: 400px;
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .log-entry.step { color: #00d9ff; }
+        .log-entry.shared { color: #00ff88; }
+        .log-entry.buddy { color: #ffd93d; }
+        .log-entry.best { color: #ff6b6b; }
+    </style>
+</head>
+<body>
+    <h1>Crossover 交叉算法可视化</h1>
+
+    <div class="container">
+        <!-- 父代对比区域 -->
+        <div class="parents-container">
+            <div class="parent-box">
+                <h3>父代 1</h3>
+                <div class="mini-grid" id="parent1"></div>
+            </div>
+            <div class="compare-arrow">⟶</div>
+            <div class="parent-box">
+                <h3>父代 2</h3>
+                <div class="mini-grid" id="parent2"></div>
+            </div>
+            <div class="compare-arrow">⟶</div>
+            <div class="parent-box result-box">
+                <h3>子代 (Kernel)</h3>
+                <div class="mini-grid" id="child"></div>
+            </div>
+        </div>
+
+        <!-- 比对说明 -->
+        <div class="compare-info" id="compare-info">
+            <span class="compare-label">比对过程:</span>
+            <span id="compare-reason">等待开始...</span>
+        </div>
+
+        <div class="grid-container">
+            <div class="grid" id="grid"></div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(135deg, #00d9ff 0%, #0099cc 100%);"></div>
+                <span>已放置 (Kernel)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(135deg, #00ff88 0%, #00cc66 100%);"></div>
+                <span>共享碎片</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(135deg, #ffd93d 0%, #cc9900 100%);"></div>
+                <span>伙伴碎片</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(135deg, #ff6b6b 0%, #cc4444 100%);"></div>
+                <span>候选碎片</span>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <div class="info-box">
+                <h3>已放置碎片</h3>
+                <div class="value" id="placed-count">0</div>
+            </div>
+            <div class="info-box">
+                <h3>候选队列</h3>
+                <div class="value" id="queue-count">0</div>
+            </div>
+            <div class="info-box">
+                <h3>当前优先级</h3>
+                <div class="value" id="priority-display">-</div>
+            </div>
+            <div class="info-box">
+                <h3>当前步骤</h3>
+                <div class="value" id="step-count">0</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="play" id="playBtn" onclick="playAnimation()">▶ 开始动画</button>
+            <button class="reset" onclick="resetAnimation()">↺ 重置</button>
+        </div>
+
+        <div class="log-container" id="log"></div>
+    </div>
+
+    <script>
+        // 模拟数据 - 6x6 拼图
+        const GRID_SIZE = 6;
+        const TOTAL_PIECES = GRID_SIZE * GRID_SIZE;
+
+        // 模拟 crossover 的执行步骤 - 从中心向外扩散，最终填满整个网格
+        const simulationSteps = [
+            // 初始化
+            { action: 'init', piece: 14, pos: [2, 2], type: 'kernel', msg: '初始化: 选择碎片14作为根碎片' },
+
+            // 第一轮 - 四个方向添加候选
+            { action: 'add', piece: 15, pos: [2, 3], type: 'best', msg: '添加候选: 碎片15 (右)' },
+            { action: 'add', piece: 8, pos: [1, 2], type: 'best', msg: '添加候选: 碎片8 (上)' },
+            { action: 'add', piece: 20, pos: [3, 2], type: 'best', msg: '添加候选: 碎片20 (下)' },
+            { action: 'add', piece: 13, pos: [2, 1], type: 'best', msg: '添加候选: 碎片13 (左)' },
+
+            // 第一轮 - 放置四个碎片
+            { action: 'place', piece: 15, pos: [2, 3], type: 'kernel', msg: '放置: 碎片15 (→右)' },
+            { action: 'place', piece: 8, pos: [1, 2], type: 'kernel', msg: '放置: 碎片8 (↑上)' },
+            { action: 'place', piece: 20, pos: [3, 2], type: 'kernel', msg: '放置: 碎片20 (↓下)' },
+            { action: 'place', piece: 13, pos: [2, 1], type: 'kernel', msg: '放置: 碎片13 (←左)' },
+
+            // 第一层外围 - 添加新候选
+            { action: 'add', piece: 21, pos: [3, 3], type: 'shared', msg: '添加候选: 碎片21 (共享碎片)' },
+            { action: 'add', piece: 7, pos: [2, 0], type: 'best', msg: '添加候选: 碎片7' },
+            { action: 'add', piece: 2, pos: [0, 2], type: 'buddy', msg: '添加候选: 碎片2 (伙伴碎片)' },
+            { action: 'add', piece: 26, pos: [4, 2], type: 'best', msg: '添加候选: 碎片26' },
+            { action: 'add', piece: 16, pos: [2, 4], type: 'best', msg: '添加候选: 碎片16' },
+            { action: 'add', piece: 9, pos: [1, 3], type: 'best', msg: '添加候选: 碎片9' },
+            { action: 'add', piece: 19, pos: [3, 1], type: 'best', msg: '添加候选: 碎片19' },
+
+            // 继续放置
+            { action: 'place', piece: 21, pos: [3, 3], type: 'kernel', msg: '放置: 碎片21' },
+            { action: 'place', piece: 7, pos: [2, 0], type: 'kernel', msg: '放置: 碎片7' },
+            { action: 'place', piece: 2, pos: [0, 2], type: 'kernel', msg: '放置: 碎片2' },
+            { action: 'place', piece: 26, pos: [4, 2], type: 'kernel', msg: '放置: 碎片26' },
+            { action: 'place', piece: 16, pos: [2, 4], type: 'kernel', msg: '放置: 碎片16' },
+            { action: 'place', piece: 9, pos: [1, 3], type: 'kernel', msg: '放置: 碎片9' },
+            { action: 'place', piece: 19, pos: [3, 1], type: 'kernel', msg: '放置: 碎片19' },
+
+            // 扩展到第二层
+            { action: 'add', piece: 22, pos: [3, 4], type: 'best', msg: '添加候选: 碎片22' },
+            { action: 'add', piece: 27, pos: [4, 3], type: 'best', msg: '添加候选: 碎片27' },
+            { action: 'add', piece: 1, pos: [0, 1], type: 'best', msg: '添加候选: 碎片1' },
+            { action: 'add', piece: 3, pos: [0, 3], type: 'best', msg: '添加候选: 碎片3' },
+            { action: 'add', piece: 6, pos: [1, 1], type: 'best', msg: '添加候选: 碎片6' },
+            { action: 'add', piece: 10, pos: [1, 4], type: 'best', msg: '添加候选: 碎片10' },
+            { action: 'add', piece: 18, pos: [2, 5], type: 'best', msg: '添加候选: 碎片18' },
+            { action: 'add', piece: 25, pos: [4, 1], type: 'best', msg: '添加候选: 碎片25' },
+
+            { action: 'place', piece: 22, pos: [3, 4], type: 'kernel', msg: '放置: 碎片22' },
+            { action: 'place', piece: 27, pos: [4, 3], type: 'kernel', msg: '放置: 碎片27' },
+            { action: 'place', piece: 1, pos: [0, 1], type: 'kernel', msg: '放置: 碎片1' },
+            { action: 'place', piece: 3, pos: [0, 3], type: 'kernel', msg: '放置: 碎片3' },
+            { action: 'place', piece: 6, pos: [1, 1], type: 'kernel', msg: '放置: 碎片6' },
+            { action: 'place', piece: 10, pos: [1, 4], type: 'kernel', msg: '放置: 碎片10' },
+            { action: 'place', piece: 18, pos: [2, 5], type: 'kernel', msg: '放置: 碎片18' },
+            { action: 'place', piece: 25, pos: [4, 1], type: 'kernel', msg: '放置: 碎片25' },
+
+            // 边缘填充
+            { action: 'add', piece: 0, pos: [0, 0], type: 'best', msg: '添加候选: 碎片0' },
+            { action: 'add', piece: 4, pos: [0, 4], type: 'best', msg: '添加候选: 碎片4' },
+            { action: 'add', piece: 5, pos: [1, 0], type: 'best', msg: '添加候选: 碎片5' },
+            { action: 'add', piece: 11, pos: [1, 5], type: 'best', msg: '添加候选: 碎片11' },
+            { action: 'add', piece: 12, pos: [2, 5], type: 'best', msg: '添加候选: 碎片12' },
+            { action: 'add', piece: 17, pos: [3, 0], type: 'best', msg: '添加候选: 碎片17' },
+            { action: 'add', piece: 23, pos: [3, 5], type: 'best', msg: '添加候选: 碎片23' },
+            { action: 'add', piece: 24, pos: [4, 0], type: 'best', msg: '添加候选: 碎片24' },
+            { action: 'add', piece: 28, pos: [4, 4], type: 'best', msg: '添加候选: 碎片28' },
+            { action: 'add', piece: 29, pos: [4, 5], type: 'best', msg: '添加候选: 碎片29' },
+            { action: 'add', piece: 30, pos: [5, 0], type: 'best', msg: '添加候选: 碎片30' },
+            { action: 'add', piece: 31, pos: [5, 1], type: 'best', msg: '添加候选: 碎片31' },
+            { action: 'add', piece: 32, pos: [5, 2], type: 'best', msg: '添加候选: 碎片32' },
+            { action: 'add', piece: 33, pos: [5, 3], type: 'best', msg: '添加候选: 碎片33' },
+            { action: 'add', piece: 34, pos: [5, 4], type: 'best', msg: '添加候选: 碎片34' },
+            { action: 'add', piece: 35, pos: [5, 5], type: 'best', msg: '添加候选: 碎片35' },
+
+            { action: 'place', piece: 0, pos: [0, 0], type: 'kernel', msg: '放置: 碎片0' },
+            { action: 'place', piece: 4, pos: [0, 4], type: 'kernel', msg: '放置: 碎片4' },
+            { action: 'place', piece: 5, pos: [1, 0], type: 'kernel', msg: '放置: 碎片5' },
+            { action: 'place', piece: 11, pos: [1, 5], type: 'kernel', msg: '放置: 碎片11' },
+            { action: 'place', piece: 12, pos: [2, 5], type: 'kernel', msg: '放置: 碎片12' },
+            { action: 'place', piece: 17, pos: [3, 0], type: 'kernel', msg: '放置: 碎片17' },
+            { action: 'place', piece: 23, pos: [3, 5], type: 'kernel', msg: '放置: 碎片23' },
+            { action: 'place', piece: 24, pos: [4, 0], type: 'kernel', msg: '放置: 碎片24' },
+            { action: 'place', piece: 28, pos: [4, 4], type: 'kernel', msg: '放置: 碎片28' },
+            { action: 'place', piece: 29, pos: [4, 5], type: 'kernel', msg: '放置: 碎片29' },
+            { action: 'place', piece: 30, pos: [5, 0], type: 'kernel', msg: '放置: 碎片30' },
+            { action: 'place', piece: 31, pos: [5, 1], type: 'kernel', msg: '放置: 碎片31' },
+            { action: 'place', piece: 32, pos: [5, 2], type: 'kernel', msg: '放置: 碎片32' },
+            { action: 'place', piece: 33, pos: [5, 3], type: 'kernel', msg: '放置: 碎片33' },
+            { action: 'place', piece: 34, pos: [5, 4], type: 'kernel', msg: '放置: 碎片34' },
+            { action: 'place', piece: 35, pos: [5, 5], type: 'kernel', msg: '放置: 碎片35 (完成!)' },
+
+            { action: 'complete', msg: '交叉完成! 36个碎片全部放置' }
+        ];
+
+        let currentStep = 0;
+        let placedPieces = new Map(); // piece -> {pos, type}
+        let candidates = new Map(); // piece -> {pos, type}
+        let animationId = null;
+
+        // 模拟父代的碎片排列 (6x6)
+        const parent1Data = [
+            14, 15, 16, 17, 18, 19,
+            8, 9, 10, 11, 12, 13,
+            20, 21, 22, 23, 24, 25,
+            2, 3, 4, 5, 6, 7,
+            26, 27, 28, 29, 30, 31,
+            32, 33, 34, 35, 0, 1
+        ];
+        const parent2Data = [
+            14, 15, 21, 22, 23, 24,
+            8, 9, 10, 16, 17, 18,
+            2, 3, 4, 5, 6, 7,
+            20, 26, 27, 28, 29, 30,
+            13, 19, 25, 31, 32, 33,
+            12, 11, 10, 9, 34, 35
+        ];
+
+        // 初始化父代网格
+        function initParentGrids() {
+            const p1 = document.getElementById('parent1');
+            const p2 = document.getElementById('parent2');
+            const child = document.getElementById('child');
+
+            p1.innerHTML = '';
+            p2.innerHTML = '';
+            child.innerHTML = '';
+
+            for (let i = 0; i < TOTAL_PIECES; i++) {
+                const cell1 = document.createElement('div');
+                cell1.className = 'mini-cell';
+                cell1.id = `p1-${i}`;
+                cell1.textContent = parent1Data[i];
+                p1.appendChild(cell1);
+
+                const cell2 = document.createElement('div');
+                cell2.className = 'mini-cell';
+                cell2.id = `p2-${i}`;
+                cell2.textContent = parent2Data[i];
+                p2.appendChild(cell2);
+
+                const cell3 = document.createElement('div');
+                cell3.className = 'mini-cell';
+                cell3.id = `child-${i}`;
+                cell3.textContent = '';
+                child.appendChild(cell3);
+            }
+        }
+
+        // 更新子代网格
+        function updateChildGrid() {
+            placedPieces.forEach((data, piece) => {
+                const idx = data.pos[0] * GRID_SIZE + data.pos[1];
+                const cell = document.getElementById(`child-${idx}`);
+                if (cell) {
+                    cell.className = 'mini-cell kernel';
+                    cell.textContent = piece;
+                }
+            });
+        }
+
+        // 显示比对过程
+        function showCompare(pieceId, currentPos, compareType) {
+            // 高亮当前碎片在父代中的位置
+            const p1Idx = parent1Data.indexOf(pieceId);
+            const p2Idx = parent2Data.indexOf(pieceId);
+
+            if (p1Idx !== -1) {
+                const cell = document.getElementById(`p1-${p1Idx}`);
+                if (cell) cell.classList.add('highlight');
+            }
+            if (p2Idx !== -1) {
+                const cell = document.getElementById(`p2-${p2Idx}`);
+                if (cell) cell.classList.add('highlight');
+            }
+
+            // 更新比对说明
+            const reasonEl = document.getElementById('compare-reason');
+            const reasons = {
+                'shared': `碎片${pieceId}: 父代1和父代2在相邻位置都选择了该碎片 → 共享碎片，优先级最高!`,
+                'buddy': `碎片${pieceId}: 该碎片与相邻碎片互相认为是最佳匹配 → 伙伴碎片，优先级次高!`,
+                'best': `碎片${pieceId}: 从预计算的最佳匹配表中获取 → 最佳匹配，优先级正常`,
+                'init': `选择碎片${pieceId}作为根碎片，随机初始化`,
+                'kernel': `碎片${pieceId}已放置到kernel`
+            };
+            reasonEl.textContent = reasons[compareType] || reasons['best'];
+        }
+
+        // 清除高亮
+        function clearHighlight() {
+            document.querySelectorAll('.mini-cell.highlight').forEach(cell => {
+                cell.classList.remove('highlight');
+            });
+        }
+
+        function initGrid() {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+
+            for (let row = 0; row < GRID_SIZE; row++) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell empty';
+                    cell.id = `cell-${row}-${col}`;
+                    grid.appendChild(cell);
+                }
+            }
+        }
+
+        function updateDisplay() {
+            // 更新已放置的碎片
+            placedPieces.forEach((data, piece) => {
+                const cell = document.getElementById(`cell-${data.pos[0]}-${data.pos[1]}`);
+                if (cell) {
+                    cell.className = `cell kernel`;
+                    cell.textContent = piece;
+                }
+            });
+
+            // 更新候选碎片（只显示最新的几个）
+            let candidateCount = 0;
+            candidates.forEach((data, piece) => {
+                if (!placedPieces.has(piece)) {
+                    const cell = document.getElementById(`cell-${data.pos[0]}-${data.pos[1]}`);
+                    if (cell && cell.classList.contains('empty')) {
+                        cell.className = `cell candidate`;
+                        cell.textContent = piece;
+                        candidateCount++;
+                    }
+                }
+            });
+
+            // 更新信息面板
+            document.getElementById('placed-count').textContent = placedPieces.size;
+            document.getElementById('queue-count').textContent = candidateCount;
+            document.getElementById('step-count').textContent = currentStep;
+        }
+
+        function addLog(message, type = 'step') {
+            const log = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = message;
+            log.insertBefore(entry, log.firstChild);
+        }
+
+        function executeStep() {
+            if (currentStep >= simulationSteps.length) {
+                document.getElementById('playBtn').disabled = false;
+                return;
+            }
+
+            const step = simulationSteps[currentStep];
+            const priorityText = {
+                'shared': '优先(-10) 共享碎片',
+                'buddy': '次优先(-1) 伙伴碎片',
+                'best': '正常(正数) 最佳匹配'
+            };
+
+            // 清除上一次的高亮
+            clearHighlight();
+
+            if (step.action === 'init') {
+                placedPieces.set(step.piece, { pos: step.pos, type: step.type });
+                addLog(step.msg);
+                showCompare(step.piece, step.pos, 'init');
+            } else if (step.action === 'add') {
+                candidates.set(step.piece, { pos: step.pos, type: step.type });
+                addLog(step.msg, step.type);
+                document.getElementById('priority-display').textContent = priorityText[step.type] || '-';
+                showCompare(step.piece, step.pos, step.type);
+            } else if (step.action === 'place') {
+                placedPieces.set(step.piece, { pos: step.pos, type: step.type });
+                candidates.delete(step.piece);
+                addLog(step.msg, 'step');
+                document.getElementById('priority-display').textContent = '已放置';
+                showCompare(step.piece, step.pos, 'kernel');
+            } else if (step.action === 'complete') {
+                addLog(step.msg, 'step');
+                document.getElementById('playBtn').disabled = false;
+                document.getElementById('priority-display').textContent = '完成!';
+                document.getElementById('compare-reason').textContent = '交叉完成!';
+                return;
+            }
+
+            updateDisplay();
+            updateChildGrid();
+            currentStep++;
+
+            animationId = setTimeout(executeStep, 3000);
+        }
+
+        function playAnimation() {
+            document.getElementById('playBtn').disabled = true;
+            if (currentStep >= simulationSteps.length) {
+                resetAnimation();
+            }
+            executeStep();
+        }
+
+        function resetAnimation() {
+            if (animationId) {
+                clearTimeout(animationId);
+            }
+            currentStep = 0;
+            placedPieces.clear();
+            candidates.clear();
+            document.getElementById('log').innerHTML = '';
+            document.getElementById('playBtn').disabled = false;
+            document.getElementById('compare-reason').textContent = '等待开始...';
+            initGrid();
+            initParentGrids();
+            updateDisplay();
+        }
+
+        // 初始化
+        initGrid();
+        initParentGrids();
+        updateDisplay();
+    </script>
+</body>
+</html>

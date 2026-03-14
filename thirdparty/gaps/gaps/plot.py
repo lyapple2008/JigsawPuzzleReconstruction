@@ -8,11 +8,24 @@ warnings.filterwarnings("ignore", category=matplotlib.MatplotlibDeprecationWarni
 
 
 class Plot(object):
+    MAX_WIDTH = 16
+    MAX_HEIGHT = 12
+
     def __init__(self, image, title="Initial problem"):
         aspect_ratio = image.shape[0] / float(image.shape[1])
 
+        # Calculate figure size while keeping within screen limits
         width = 8
         height = width * aspect_ratio
+
+        # Scale down if too large
+        if width > self.MAX_WIDTH:
+            width = self.MAX_WIDTH
+            height = width * aspect_ratio
+        if height > self.MAX_HEIGHT:
+            height = self.MAX_HEIGHT
+            width = height / aspect_ratio
+
         fig = plt.figure(figsize=(width, height), frameon=False)
 
         # Let image fill the figure

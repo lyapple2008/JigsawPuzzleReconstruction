@@ -3,46 +3,64 @@ import numpy as np
 from gaps.piece import Piece
 
 
+def parse_piece_size(piece_size):
+    """Parse piece_size from integer, tuple, or string format.
+
+    Supports:
+    - Integer: 32 -> (32, 32)
+    - Tuple: (64, 32) -> (64, 32)
+    - String: "64x32" -> (64, 32)
+
+    Returns: (width, height) tuple
+    """
+    if isinstance(piece_size, tuple):
+        return piece_size
+    if isinstance(piece_size, str):
+        if 'x' in piece_size.lower():
+            parts = piece_size.lower().split('x')
+            return (int(parts[0]), int(parts[1]))
+        return (int(piece_size), int(piece_size))
+    # Integer
+    return (piece_size, piece_size)
+
+
 def flatten_image(image, piece_size, indexed=False):
-    """Converts image into list of pieces (square or rectangular).
+    """Converts image into list of rectangular pieces.
 
     Input image is divided into pieces of specified size and then
-    flattened into list. Each list element is PIECE_HEIGHT x PIECE_WIDTH x 3
+    flattened into list. Each list element is HEIGHT x WIDTH x 3
 
     :params image:      Input image.
-    :params piece_size: Size of single piece. Can be:
-                       - int: square piece (piece_size x piece_size)
-                       - tuple (height, width): rectangular piece
+    :params piece_size: Size of single piece as integer, (width, height) tuple,
+                        or "WxH" string format.
     :params indexed: If True list of Pieces with IDs will be returned,
         otherwise list of ndarray pieces
 
     Usage::
 
         >>> from gaps.image_helpers import flatten_image
-        >>> flat_image = flatten_image(image, 32)  # square pieces
-        >>> flat_image = flatten_image(image, (32, 48))  # rectangular pieces
+        >>> flat_image = flatten_image(image, 32)
+        >>> flat_image = flatten_image(image, (64, 32))
+        >>> flat_image = flatten_image(image, "64x32")
 
     """
-    # Support both square (int) and rectangular (tuple) piece sizes
-    if isinstance(piece_size, tuple):
-        piece_h, piece_w = piece_size
-    else:
-        piece_h = piece_w = piece_size
+    width, height = parse_piece_size(piece_size)
 
-    rows, columns = image.shape[0] // piece_h, image.shape[1] // piece_w
+    rows = image.shape[0] // height
+    columns = image.shape[1] // width
     pieces = []
 
     # Crop pieces from original image
     for y in range(rows):
         for x in range(columns):
             left, top, w, h = (
-                x * piece_w,
-                y * piece_h,
-                (x + 1) * piece_w,
-                (y + 1) * piece_h,
+                x * width,
+                y * height,
+                (x + 1) * width,
+                (y + 1) * height,
             )
-            piece = np.empty((piece_h, piece_w, image.shape[2]))
-            piece[:piece_h, :piece_w, :] = image[top:h, left:w, :]
+            piece = np.empty((height, width, image.shape[2]))
+            piece[:height, :width, :] = image[top:h, left:w, :]
             pieces.append(piece)
 
     if indexed:
