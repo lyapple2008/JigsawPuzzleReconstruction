@@ -27,10 +27,10 @@ def load_image(path: Path) -> np.ndarray:
 def solve_puzzle(
     image: np.ndarray,
     grid_size: Tuple[int, int] = (8, 8),
-    solver_type: str = "default",
+    solver_type: str = "gaps",
     border_width: int = 10,
     robust_method: str = "median",
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     """Solve the puzzle using reconstruct.py logic.
 
     Args:
@@ -41,7 +41,8 @@ def solve_puzzle(
         robust_method: Dissimilarity method ("mse", "median", "percentile", "huber")
 
     Returns:
-        solved_grid: 2D array of piece indices in solved order
+        (solved_grid, reconstructed_image): solved_grid is 2D array of piece indices,
+        reconstructed_image is the reconstructed puzzle image
     """
     from jigsaw.gap_splitter import split_with_gap_aware
     from jigsaw.solver import SolverFactory
@@ -70,7 +71,7 @@ def solve_puzzle(
 
     # Solve
     result = solver.solve(patches)
-    return result.grid
+    return result.grid, result.reconstructed_image
 
 
 def get_current_grid(
@@ -92,7 +93,7 @@ def get_current_grid(
         robust_method: Dissimilarity method ("mse", "median", "percentile", "huber")
 
     Returns:
-        (cropped_image, solved_grid, detected_bbox)
+        (cropped_image, solved_grid, reconstructed_image, detected_bbox)
     """
     # Capture screenshot
     image = screenshot.capture()
@@ -109,9 +110,9 @@ def get_current_grid(
         detected_bbox = puzzle_bbox
 
     # Solve the puzzle
-    solved_grid = solve_puzzle(cropped, grid_size, solver_type, border_width, robust_method)
+    solved_grid, reconstructed_image = solve_puzzle(cropped, grid_size, solver_type, border_width, robust_method)
 
-    return cropped, solved_grid, detected_bbox
+    return cropped, solved_grid, reconstructed_image, detected_bbox
 
 
 def run_automation(
@@ -158,98 +159,47 @@ def run_automation(
     try:
         # Initialize components
         screenshot = Screenshot(connector)
-        gesture = Gesture(connector, grid_size=grid_size)
-        planner = MotionPlanner(grid_size=grid_size)
 
-        # Get initial puzzle state
-        print("\n[2/6] Capturing initial puzzle state...")
-        start_time = time.time()
+        # Step 1: Capture original screenshot
+        print("\n[2/5] Capturing screenshot...")
+        original_image = screenshot.capture()
 
-        cropped, solved_grid, bbox = get_current_grid(
-            screenshot, grid_size, solver_type, border_width=border_width, robust_method=robust_method
-        )
-
-        if bbox is None:
-            print("ERROR: Could not detect puzzle region!")
-            return
-
-        # Set puzzle bounding box
-        gesture.set_puzzle_bbox(bbox)
-        print(f"    Puzzle bbox: {bbox}")
-        print(f"    Solved grid:\n{solved_grid}")
-
-        # Save initial state
         import cv2
+        cv2.imwrite(
+            str(output_dir / "1_original_screenshot.png"),
+            cv2.cvtColor(original_image, cv2.COLOR_RGB2BGR),
+        )
+        print(f"    Saved: 1_original_screenshot.png")
+
+        # Step 2: Extract puzzle region (ROI)
+        print("\n[3/5] Extracting puzzle region...")
+        from jigsaw.roi_color import extract_puzzle_region_by_color
+
+        roi_result = extract_puzzle_region_by_color(original_image)
+        cropped = roi_result.image
+        bbox = roi_result.bbox
 
         cv2.imwrite(
-            str(output_dir / "initial_puzzle.png"),
+            str(output_dir / "2_roi_extracted.png"),
             cv2.cvtColor(cropped, cv2.COLOR_RGB2BGR),
         )
+        print(f"    Saved: 2_roi_extracted.png")
+        print(f"    BBox: {bbox}")
 
-        # Main loop
-        print("\n[3/6] Starting solve loop...")
-        iteration = 0
-
-        while time.time() - start_time < max_time:
-            iteration += 1
-            elapsed = time.time() - start_time
-
-            print(f"\n--- Iteration {iteration} (elapsed: {elapsed:.1f}s) ---")
-
-            # Capture current state
-            cropped, solved_grid, _ = get_current_grid(
-                screenshot, grid_size, solver_type, bbox, border_width, robust_method
-            )
-
-            # Generate move plan (assuming identity current grid - pieces are shuffled)
-            # In reality, we'd need to analyze the current screenshot to determine
-            # the actual current positions
-            moves = planner.plan_greedy(solved_grid.tolist())
-            print(f"    Planned {len(moves)} moves")
-
-            if not moves:
-                print("\n[SUCCESS] Puzzle appears to be solved!")
-                break
-
-            # Execute moves in reverse order (last move first)
-            # This is because later moves don't affect earlier positions
-            print(f"    Executing moves...")
-            for i, move in enumerate(reversed(moves)):
-                if time.time() - start_time >= max_time:
-                    print("    Time limit reached!")
-                    break
-
-                print(f"    Move {i+1}/{len(moves)}: {move}")
-                gesture.swap_pieces(move.from_pos, move.to_pos)
-                time.sleep(0.3)  # Wait for animation
-
-            # Save debug screenshot
-            cv2.imwrite(
-                str(output_dir / f"iteration_{iteration}.png"),
-                cv2.cvtColor(cropped, cv2.COLOR_RGB2BGR),
-            )
-
-            # Wait before next iteration
-            time.sleep(check_interval)
-
-        # Check final state
-        print("\n[4/6] Checking final state...")
-        elapsed = time.time() - start_time
-
-        if elapsed >= max_time:
-            print(f"    Time limit ({max_time}s) reached!")
-        else:
-            print(f"    Completed in {elapsed:.1f}s")
-
-        # Capture final state
-        final_image = screenshot.capture()
-        cv2.imwrite(
-            str(output_dir / "final_puzzle.png"),
-            cv2.cvtColor(final_image, cv2.COLOR_RGB2BGR),
+        # Step 3: Solve puzzle
+        print("\n[4/5] Solving puzzle...")
+        solved_grid, reconstructed_image = solve_puzzle(
+            cropped, grid_size, solver_type, border_width, robust_method
         )
 
-        print("\n[5/6] Automation completed!")
-        print(f"    Total iterations: {iteration}")
+        cv2.imwrite(
+            str(output_dir / "3_reconstructed.png"),
+            cv2.cvtColor(reconstructed_image, cv2.COLOR_RGB2BGR),
+        )
+        print(f"    Saved: 3_reconstructed.png")
+        print(f"    Solved grid:\n{solved_grid}")
+
+        print("\n[5/5] Completed!")
         print(f"    Output saved to: {output_dir}")
 
     finally:
@@ -347,7 +297,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="iOS Jigsaw Puzzle Solver")
     parser.add_argument("--test-offline", type=Path, help="Test without device")
     parser.add_argument("--grid", type=lambda x: tuple(map(int, x.split("x"))), default=(8, 8))
-    parser.add_argument("--solver", default="default", choices=["default", "gaps"])
+    parser.add_argument("--solver", default="gaps", choices=["default", "gaps"])
     parser.add_argument("--border-width", type=int, default=10, help="Border width for gaps solver (default: 10)")
     parser.add_argument("--robust-method", default="median", choices=["mse", "median", "percentile", "huber"],
                         help="Robust method for gaps solver (default: median)")

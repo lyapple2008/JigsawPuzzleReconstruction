@@ -49,11 +49,8 @@ class Screenshot:
             # If it's a PIL-like image
             image = np.array(img)
 
-        # Convert BGR to RGB if needed
-        if image.ndim == 3 and image.shape[2] == 3:
-            # Check if it's BGR (OpenCV default) or RGB
-            # WDA returns PNG which is RGB
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # WDA returns PIL Image (PNG) which is RGB format
+        # numpy array from PIL is already RGB, no conversion needed
 
         if save_path:
             save_path = Path(save_path)
