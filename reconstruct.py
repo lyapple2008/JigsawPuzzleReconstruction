@@ -133,6 +133,19 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of edge pixels to use for dissimilarity in gaps solver (default: 1)",
     )
+    parser.add_argument(
+        "--robust-method",
+        type=str,
+        default="mse",
+        choices=["mse", "median", "percentile", "huber"],
+        help="Robust dissimilarity method for gaps solver (default: mse)",
+    )
+    parser.add_argument(
+        "--percentile",
+        type=float,
+        default=25.0,
+        help="Percentile for robust_method=percentile (default: 25.0)",
+    )
     return parser.parse_args()
 
 
@@ -162,6 +175,8 @@ def main() -> None:
         patch_h, patch_w = patches[0].image.shape[:2]
         solver_kwargs["piece_size"] = (patch_h, patch_w)
         solver_kwargs["border_width"] = args.border_width
+        solver_kwargs["robust_method"] = args.robust_method
+        solver_kwargs["percentile"] = args.percentile
 
     # Create solver using factory
     solver = SolverFactory.create(

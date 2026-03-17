@@ -36,6 +36,8 @@ class GapsSolver(BaseSolver):
         generations: int = 20,
         elite_size: int = 2,
         border_width: int = 1,
+        robust_method: str = "mse",
+        percentile: float = 25.0,
         **kwargs
     ):
         """Initialize the gaps solver.
@@ -51,6 +53,9 @@ class GapsSolver(BaseSolver):
             generations: Number of evolution generations
             elite_size: Number of elite individuals to preserve
             border_width: Number of edge pixels to use for dissimilarity (default: 1)
+            robust_method: Method for robust dissimilarity calculation.
+                          Options: "mse" (original), "median", "percentile", "huber"
+            percentile: Percentile to use when robust_method="percentile" (default: 25.0)
             **kwargs: Additional parameters (ignored)
         """
         self.rows = rows
@@ -60,6 +65,8 @@ class GapsSolver(BaseSolver):
         self.generations = generations
         self.elite_size = elite_size
         self.border_width = border_width
+        self.robust_method = robust_method
+        self.percentile = percentile
 
     def solve(
         self,
@@ -111,7 +118,9 @@ class GapsSolver(BaseSolver):
             population_size=self.population_size,
             generations=self.generations,
             elite_size=self.elite_size,
-            border_width=self.border_width
+            border_width=self.border_width,
+            robust_method=self.robust_method,
+            percentile=self.percentile,
         )
         result_individual: Individual = ga.start_evolution(verbose=False)
 

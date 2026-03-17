@@ -39,6 +39,11 @@
 2. 将 MSE 改为中值或百分位数
 3. 添加参数选择（可配置使用哪种度量）
 
+> 2026.03.17 测试median搭配border-width效果最好
+``` python
+python3 reconstruct.py --image examples/IMG_1230.png --grid 8x8 --extract-roi --solver gaps --robust-method median --border-width 10
+```
+
 ### Phase 2: 方案 B - 多尺度边缘匹配（如 Phase 1 效果不足）
 1. 实现多宽度 strip 计算
 2. 添加自适应宽度选择逻辑
