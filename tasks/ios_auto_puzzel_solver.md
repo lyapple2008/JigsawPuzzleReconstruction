@@ -105,7 +105,7 @@ tidevice list
 tidevice wda &
 # 或
 tidevice devicelist  # 查看设备UDID
-tidevice -u <UDID> wdaproxy -t 8100 &
+tidevice -u <UDID> wdaproxy -p 8100 &
 ```
 
 ### 方式二：使用 WDA + iproxy
@@ -156,7 +156,7 @@ python3 -m ios_auto.automation --test-offline examples/IMG_1230.png --grid 8x8
 
 ```bash
 # 启动WDA服务
-tidevice wdaproxy -t 8100 &
+tidevice wdaproxy -p 8100 &
 
 # 运行自动化
 python3 -m ios_auto.automation --grid 8x8 --max-time 210
@@ -166,6 +166,8 @@ python3 -m ios_auto.automation --grid 8x8 --max-time 210
 
 - `--grid`: 网格大小 (默认 8x8)
 - `--solver`: 求解器 (default 或 gaps)
+- `--border-width`: 边缘像素宽度 (默认 10)
+- `--robust-method`: 鲁棒方法 (默认 median)
 - `--max-time`: 最大运行时间（秒，默认210）
 - `--interval`: 检查间隔（秒，默认5）
 - `--output`: 输出目录
@@ -188,7 +190,7 @@ tidevice list
 ### Step 3: 启动WDA服务
 ```bash
 # 方式A: 使用tidevice内置的wdaproxy
-tidevice wdaproxy -t 8100 &
+tidevice wdaproxy -p 8100 &
 ```
 
 ### Step 4: 实现截图功能
