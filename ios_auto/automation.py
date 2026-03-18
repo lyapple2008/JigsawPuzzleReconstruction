@@ -115,6 +115,82 @@ def get_current_grid(
     return cropped, solved_grid, reconstructed_image, detected_bbox
 
 
+def execute_moves(
+    connector: DeviceConnector,
+    solved_grid: np.ndarray,
+    current_grid: np.ndarray,
+    puzzle_bbox: Tuple[int, int, int, int],
+    grid_size: Tuple[int, int],
+    max_time: float = 210.0,
+    output_dir: Optional[Path] = None,
+) -> None:
+    """Execute puzzle solving moves on the device.
+
+    Args:
+        connector: Device connector instance
+        solved_grid: Target solved grid from solver
+        current_grid: Current arrangement of pieces on device
+        puzzle_bbox: Puzzle bounding box (x1, y1, x2, y2)
+        grid_size: Grid dimensions (rows, cols)
+        max_time: Maximum execution time in seconds
+        output_dir: Directory to save debug info
+    """
+    import time
+
+    rows, cols = grid_size
+    start_time = time.time()
+
+    # Initialize gesture controller
+    gesture = Gesture(connector, grid_size=grid_size)
+    gesture.set_puzzle_bbox(puzzle_bbox)
+
+    # Initialize motion planner
+    planner = MotionPlanner(grid_size=grid_size)
+
+    # Convert numpy arrays to lists for planner
+    solved_list = solved_grid.tolist()
+    current_list = current_grid.tolist()
+
+    # Plan moves from current state to solved state
+    moves = planner.plan_from_solved_grid(current_list, solved_list)
+    print(f"    Planned {len(moves)} swap moves")
+
+    if output_dir is not None:
+        with open(output_dir / "moves.txt", "w") as f:
+            for i, move in enumerate(moves):
+                f.write(f"{i + 1}: {move}\n")
+        print(f"    Moves saved to: {output_dir / 'moves.txt'}")
+
+    # Execute moves with timeout check
+    print(f"    Puzzle bbox: {puzzle_bbox}")
+    screen_w, screen_h = connector.get_screen_size()
+    print(f"    Screen size: {screen_w}x{screen_h}")
+    for i, move in enumerate(moves):
+        elapsed = time.time() - start_time
+        if elapsed > max_time:
+            print(f"    Timeout! Executed {i}/{len(moves)} moves")
+            break
+
+        print(f"    Move {i + 1}/{len(moves)}: {move}")
+        # Debug: print pixel coordinates
+        from_point = gesture.grid_to_pixel(move.from_pos[0], move.from_pos[1])
+        to_point = gesture.grid_to_pixel(move.to_pos[0], move.to_pos[1])
+        print(f"        From pixel: ({from_point.x:.1f}, {from_point.y:.1f})")
+        print(f"        To pixel: ({to_point.x:.1f}, {to_point.y:.1f})")
+        try:
+            gesture.swap_pieces(move.from_pos, move.to_pos, duration=1.0)
+            # Small delay between moves for game to register
+            time.sleep(0.5)
+        except Exception as e:
+            import traceback
+            print(f"    Error executing move: {type(e).__name__}: {e}")
+            print(f"    Traceback: {traceback.format_exc()[:200]}")
+            continue
+
+    total_time = time.time() - start_time
+    print(f"    Completed {len(moves)} moves in {total_time:.1f}s")
+
+
 def run_automation(
     device_url: str = "http://localhost:8100",
     udid: Optional[str] = None,
@@ -161,7 +237,7 @@ def run_automation(
         screenshot = Screenshot(connector)
 
         # Step 1: Capture original screenshot
-        print("\n[2/5] Capturing screenshot...")
+        print("\n[2/6] Capturing screenshot...")
         original_image = screenshot.capture()
 
         import cv2
@@ -172,7 +248,7 @@ def run_automation(
         print(f"    Saved: 1_original_screenshot.png")
 
         # Step 2: Extract puzzle region (ROI)
-        print("\n[3/5] Extracting puzzle region...")
+        print("\n[3/6] Extracting puzzle region...")
         from jigsaw.roi_color import extract_puzzle_region_by_color
 
         roi_result = extract_puzzle_region_by_color(original_image)
@@ -187,7 +263,7 @@ def run_automation(
         print(f"    BBox: {bbox}")
 
         # Step 3: Solve puzzle
-        print("\n[4/5] Solving puzzle...")
+        print("\n[3/6] Solving puzzle...")
         solved_grid, reconstructed_image = solve_puzzle(
             cropped, grid_size, solver_type, border_width, robust_method
         )
@@ -199,7 +275,23 @@ def run_automation(
         print(f"    Saved: 3_reconstructed.png")
         print(f"    Solved grid:\n{solved_grid}")
 
-        print("\n[5/5] Completed!")
+        # Step 5: Plan and execute moves
+        print("\n[5/6] Planning and executing moves...")
+
+        # Get current grid state (for 8x8 puzzle, pieces are in sequential order 0-63)
+        rows, cols = grid_size
+        current_grid = np.array([[j * cols + i for i in range(cols)] for j in range(rows)])
+
+        execute_moves(
+            connector=connector,
+            solved_grid=solved_grid,
+            current_grid=current_grid,
+            puzzle_bbox=bbox,
+            grid_size=grid_size,
+            max_time=max_time,
+            output_dir=output_dir,
+        )
+
         print(f"    Output saved to: {output_dir}")
 
     finally:

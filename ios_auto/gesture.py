@@ -63,6 +63,12 @@ class Gesture:
         self.puzzle_bbox = puzzle_bbox
         self.grid_size = grid_size  # (rows, cols)
 
+        # Calculate scale factor between screenshot and actual screen
+        screenshot = self.connector.client.screenshot()
+        screenshot_size = screenshot.size
+        screen_size = self.connector.get_screen_size()
+        self._scale = screenshot_size[0] / screen_size[0]  # Should be ~3 for Retina
+
     def set_puzzle_bbox(self, bbox: Tuple[int, int, int, int]) -> None:
         """Set puzzle bounding box.
 
@@ -158,14 +164,25 @@ class Gesture:
 
         session = self.connector.session
 
+        # Convert to integers (required by wda), applying scale correction
+        x1, y1 = int(from_pos.x / self._scale), int(from_pos.y / self._scale)
+        x2, y2 = int(to_pos.x / self._scale), int(to_pos.y / self._scale)
+
+        # Debug: print actual values passed to swipe
+        print(f"        DEBUG swipe [scale={self._scale:.1f}]: x1={x1}, y1={y1}, x2={x2}, y2={y2}, duration={duration}")
+        print(f"        DEBUG: calling session.swipe()...")
+
+        # Verify session is alive by getting status
+        try:
+            self.connector.client.status()
+            print(f"        DEBUG: client.status() OK")
+        except Exception as e:
+            print(f"        DEBUG: client.status() failed: {e}")
+
         # Perform drag gesture using swipe
-        session.swipe(
-            from_pos.x,
-            from_pos.y,
-            to_pos.x,
-            to_pos.y,
-            duration,
-        )
+        session.swipe(x1, y1, x2, y2, duration)
+
+        print(f"        DEBUG: session.swipe() returned")
 
     def swap_pieces(
         self,
