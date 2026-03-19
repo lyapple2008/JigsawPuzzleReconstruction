@@ -178,9 +178,9 @@ def execute_moves(
         print(f"        From pixel: ({from_point.x:.1f}, {from_point.y:.1f})")
         print(f"        To pixel: ({to_point.x:.1f}, {to_point.y:.1f})")
         try:
-            gesture.swap_pieces(move.from_pos, move.to_pos, duration=1.0)
+            gesture.swap_pieces(move.from_pos, move.to_pos, duration=0.2)
             # Small delay between moves for game to register
-            time.sleep(0.5)
+            time.sleep(0.1)
         except Exception as e:
             import traceback
             print(f"    Error executing move: {type(e).__name__}: {e}")
