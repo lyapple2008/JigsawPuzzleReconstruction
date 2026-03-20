@@ -147,7 +147,7 @@ class Gesture:
         self,
         from_pos: Union[Point, Tuple[int, int]],
         to_pos: Union[Point, Tuple[int, int]],
-        duration: float = 0.3,
+        duration: float = 0.1,
     ) -> None:
         """Drag from one position to another.
 
@@ -168,27 +168,14 @@ class Gesture:
         x1, y1 = int(from_pos.x / self._scale), int(from_pos.y / self._scale)
         x2, y2 = int(to_pos.x / self._scale), int(to_pos.y / self._scale)
 
-        # Debug: print actual values passed to swipe
-        print(f"        DEBUG swipe [scale={self._scale:.1f}]: x1={x1}, y1={y1}, x2={x2}, y2={y2}, duration={duration}")
-        print(f"        DEBUG: calling session.swipe()...")
-
-        # Verify session is alive by getting status
-        try:
-            self.connector.client.status()
-            print(f"        DEBUG: client.status() OK")
-        except Exception as e:
-            print(f"        DEBUG: client.status() failed: {e}")
-
         # Perform drag gesture using swipe
         session.swipe(x1, y1, x2, y2, duration)
-
-        print(f"        DEBUG: session.swipe() returned")
 
     def swap_pieces(
         self,
         from_pos: Union[Point, Tuple[int, int]],
         to_pos: Union[Point, Tuple[int, int]],
-        duration: float = 0.3,
+        duration: float = 0.1,
     ) -> None:
         """Swap two puzzle pieces by dragging.
 
