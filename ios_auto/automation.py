@@ -30,7 +30,7 @@ def solve_puzzle(
     solver_type: str = "gaps",
     border_width: int = 10,
     robust_method: str = "median",
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, List]:
     """Solve the puzzle using reconstruct.py logic.
 
     Args:
@@ -41,8 +41,9 @@ def solve_puzzle(
         robust_method: Dissimilarity method ("mse", "median", "percentile", "huber")
 
     Returns:
-        (solved_grid, reconstructed_image): solved_grid is 2D array of piece indices,
-        reconstructed_image is the reconstructed puzzle image
+        (solved_grid, reconstructed_image, patches): solved_grid is 2D array of piece indices,
+        reconstructed_image is the reconstructed puzzle image,
+        patches is list of puzzle piece images
     """
     from jigsaw.gap_splitter import split_with_gap_aware
     from jigsaw.solver import SolverFactory
@@ -71,7 +72,7 @@ def solve_puzzle(
 
     # Solve
     result = solver.solve(patches)
-    return result.grid, result.reconstructed_image
+    return result.grid, result.reconstructed_image, patches
 
 
 def get_current_grid(
@@ -81,7 +82,7 @@ def get_current_grid(
     puzzle_bbox: Optional[Tuple[int, int, int, int]] = None,
     border_width: int = 10,
     robust_method: str = "median",
-) -> Tuple[np.ndarray, np.ndarray, Optional[Tuple[int, int, int, int]]]:
+) -> Tuple[np.ndarray, np.ndarray, List, Optional[Tuple[int, int, int, int]]]:
     """Get current puzzle state from screenshot.
 
     Args:
@@ -93,7 +94,7 @@ def get_current_grid(
         robust_method: Dissimilarity method ("mse", "median", "percentile", "huber")
 
     Returns:
-        (cropped_image, solved_grid, reconstructed_image, detected_bbox)
+        (cropped_image, solved_grid, reconstructed_image, patches, detected_bbox)
     """
     # Capture screenshot
     image = screenshot.capture()
@@ -110,9 +111,9 @@ def get_current_grid(
         detected_bbox = puzzle_bbox
 
     # Solve the puzzle
-    solved_grid, reconstructed_image = solve_puzzle(cropped, grid_size, solver_type, border_width, robust_method)
+    solved_grid, reconstructed_image, patches = solve_puzzle(cropped, grid_size, solver_type, border_width, robust_method)
 
-    return cropped, solved_grid, reconstructed_image, detected_bbox
+    return cropped, solved_grid, reconstructed_image, patches, detected_bbox
 
 
 def execute_moves(
@@ -225,7 +226,7 @@ def run_automation(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Connect to device
-    print("\n[1/6] Connecting to iOS device...")
+    print("\n[1/8] Connecting to iOS device...")
     connector = DeviceConnector(url=device_url, udid=udid)
 
     if not connector.connect():
@@ -236,8 +237,8 @@ def run_automation(
         # Initialize components
         screenshot = Screenshot(connector)
 
-        # Step 1: Capture original screenshot
-        print("\n[2/6] Capturing screenshot...")
+        # Step 2: Capture original screenshot
+        print("\n[2/8] Capturing screenshot...")
         original_image = screenshot.capture()
 
         import cv2
@@ -247,8 +248,8 @@ def run_automation(
         )
         print(f"    Saved: 1_original_screenshot.png")
 
-        # Step 2: Extract puzzle region (ROI)
-        print("\n[3/6] Extracting puzzle region...")
+        # Step 3: Extract puzzle region (ROI)
+        print("\n[3/8] Extracting puzzle region...")
         from jigsaw.roi_color import extract_puzzle_region_by_color
 
         roi_result = extract_puzzle_region_by_color(original_image)
@@ -262,11 +263,13 @@ def run_automation(
         print(f"    Saved: 2_roi_extracted.png")
         print(f"    BBox: {bbox}")
 
-        # Step 3: Solve puzzle
-        print("\n[3/6] Solving puzzle...")
-        solved_grid, reconstructed_image = solve_puzzle(
+        # Step 4: Solve puzzle
+        print("\n[4/8] Solving puzzle...")
+        solved_grid, reconstructed_image, patches = solve_puzzle(
             cropped, grid_size, solver_type, border_width, robust_method
         )
+        # Convert patches to numpy arrays for editor
+        patches_array = [p.image for p in patches]
 
         cv2.imwrite(
             str(output_dir / "3_reconstructed.png"),
@@ -275,8 +278,62 @@ def run_automation(
         print(f"    Saved: 3_reconstructed.png")
         print(f"    Solved grid:\n{solved_grid}")
 
-        # Step 5: Plan and execute moves
-        print("\n[5/6] Planning and executing moves...")
+        # Step 5: Display reconstructed image (matplotlib preview)
+        print("\n[5/8] Showing reconstruction preview...")
+        try:
+            import matplotlib.pyplot as plt
+
+            # Display using matplotlib
+            fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+            ax.imshow(reconstructed_image)
+            ax.set_title("Reconstructed Puzzle Preview", fontsize=12)
+            ax.axis("off")
+
+            plt.tight_layout()
+            print("    Preview window opened. Close it to continue...")
+            plt.show(block=True)
+            plt.close(fig)
+        except ImportError:
+            print("    Warning: matplotlib not available, skipping preview")
+
+        # Step 6: Interactive puzzle piece editor
+        print("\n[6/8] Opening interactive puzzle editor...")
+        print("    - Click two pieces to swap them")
+        print("    - Drag a piece onto another to swap")
+        print("    - Click 'Confirm & Continue' when done")
+        print("    - Click 'Cancel' to abort")
+
+        from .puzzle_editor import edit_puzzle_pieces
+
+        # Calculate piece size based on cropped image
+        piece_h, piece_w = cropped.shape[:2]
+        piece_h = piece_h // rows
+        piece_w = piece_w // cols
+        piece_size = (piece_w, piece_h)
+
+        # Open interactive editor
+        edited_grid, confirmed = edit_puzzle_pieces(
+            patches=patches_array,
+            grid=solved_grid.copy(),
+            grid_size=grid_size,
+            piece_size=piece_size,
+            title="Puzzle Editor - Correct any mistakes before execution",
+        )
+
+        if not confirmed:
+            print("    User cancelled execution.")
+            print("\n" + "=" * 50)
+            print("Automation Cancelled by User")
+            print("=" * 50)
+            connector.disconnect()
+            return
+
+        # Update solved_grid with user corrections
+        solved_grid = edited_grid
+        print(f"    User corrected grid:\n{solved_grid}")
+
+        # Step 7: Plan and execute moves
+        print("\n[7/8] Planning and executing moves...")
 
         # Get current grid state (for 8x8 puzzle, pieces are in sequential order 0-63)
         rows, cols = grid_size
@@ -295,7 +352,7 @@ def run_automation(
         print(f"    Output saved to: {output_dir}")
 
     finally:
-        print("\n[6/6] Disconnecting device...")
+        print("\n[8/8] Disconnecting device...")
         connector.disconnect()
 
     print("\n" + "=" * 50)
