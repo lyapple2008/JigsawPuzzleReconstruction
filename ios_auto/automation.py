@@ -178,9 +178,9 @@ def execute_moves(
         print(f"        From pixel: ({from_point.x:.1f}, {from_point.y:.1f})")
         print(f"        To pixel: ({to_point.x:.1f}, {to_point.y:.1f})")
         try:
-            gesture.swap_pieces(move.from_pos, move.to_pos, duration=1.0)
+            gesture.swap_pieces(move.from_pos, move.to_pos, duration=0.08)
             # Small delay between moves for game to register
-            time.sleep(0.5)
+            time.sleep(0.03)
         except Exception as e:
             import traceback
             print(f"    Error executing move: {type(e).__name__}: {e}")
@@ -390,7 +390,7 @@ if __name__ == "__main__":
     parser.add_argument("--test-offline", type=Path, help="Test without device")
     parser.add_argument("--grid", type=lambda x: tuple(map(int, x.split("x"))), default=(8, 8))
     parser.add_argument("--solver", default="gaps", choices=["default", "gaps"])
-    parser.add_argument("--border-width", type=int, default=10, help="Border width for gaps solver (default: 10)")
+    parser.add_argument("--border-width", type=int, default=25, help="Border width for gaps solver (default: 10)")
     parser.add_argument("--robust-method", default="median", choices=["mse", "median", "percentile", "huber"],
                         help="Robust method for gaps solver (default: median)")
     parser.add_argument("--output", type=Path, default=Path("ios_auto_output"))
