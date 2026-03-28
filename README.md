@@ -4,9 +4,11 @@
 
 ## 功能特性
 
-- **图像切分**: 将图像均匀分割为 M×N 拼图块
-- **边缘匹配**: 基于 L2 距离计算相邻图块的匹配代价
-- **多种求解器**: 支持贪心求解、遗传算法求解、带间隙感知的求解
+- **图像切分**: 将图像均匀分割为 M×N 拼图块，支持带间隙感知的切分
+- **边缘匹配**: 基于 L2 距离计算相邻图块的匹配代价，支持多种鲁棒方法
+- **多种求解器**: 支持贪心求解（default）、遗传算法求解（gaps）
+- **拼图区域检测**: 自动从屏幕截图中提取拼图区域
+- **位置先验**: 支持基于位置先验的拼图排列优化
 - **准确率评估**: 计算位置准确率和邻居匹配准确率
 - **iOS 自动化**: 通过 WDA (WebDriverAgent) 控制 iOS 设备自动完成拼图
 
@@ -15,26 +17,36 @@
 ```
 .
 ├── jigsaw/                      # 核心拼图还原模块
-│   ├── splitter.py              # 图像切分
-│   ├── matcher.py              # 边缘匹配计算
-│   ├── solver/                 # 求解器
-│   │   ├── default_solver.py   # 贪心求解器
-│   │   ├── gaps_solver.py      # 带间隙感知求解器
-│   │   └── factory.py          # 求解器工厂
-│   ├── evaluator.py            # 准确率评估
-│   ├── roi_color.py            # 基于颜色的ROI提取
-│   └── puzzle_roi.py           # 拼图区域检测
+│   ├── __init__.py              # 模块入口，导出公开API
+│   ├── splitter.py              # 图像切分（Patch 数据结构）
+│   ├── matcher.py               # 边缘匹配计算（L2 距离）
+│   ├── solver/                  # 求解器
+│   │   ├── __init__.py          # 求解器工厂注册
+│   │   ├── base.py              # 基类 BaseSolver、SolveResult
+│   │   ├── factory.py           # 求解器工厂
+│   │   ├── default_solver.py    # 贪心求解器
+│   │   └── gaps_solver.py       # 遗传算法求解器
+│   ├── gap_splitter.py          # 带间隙感知的图像切分
+│   ├── puzzle_roi.py            # 拼图区域检测
+│   ├── roi_color.py             # 基于颜色的ROI提取
+│   ├── position_prior.py        # 位置先验
+│   ├── evaluator.py             # 准确率评估
+│   └── utils.py                 # 工具函数
 │
-├── ios_auto/                   # iOS自动化模块
-│   ├── connector.py            # WDA设备连接
-│   ├── screenshot.py           # 截图获取
-│   ├── gesture.py              # 触控操作
+├── ios_auto/                    # iOS自动化模块
+│   ├── connector.py             # WDA设备连接
+│   ├── screenshot.py            # 截图获取
+│   ├── gesture.py               # 触控操作
 │   ├── planner.py              # 移动规划
-│   └── automation.py           # 主自动化流程
+│   ├── automation.py           # 主自动化流程
+│   └── puzzle_editor.py         # 拼图编辑
 │
-├── demo.py                      # 演示脚本
+├── thirdparty/gaps/             # 第三方遗传算法库
+├── benchmarks/                  # 性能基准测试
+├── tests/                       # 测试用例
+├── demo.py                      # 演示脚本（本地图像还原）
 ├── reconstruct.py              # 拼图还原脚本
-└── tests/                       # 测试用例
+└── verify_roi.py               # ROI验证脚本
 ```
 
 ## 环境配置
