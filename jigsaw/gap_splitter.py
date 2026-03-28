@@ -96,7 +96,39 @@ def _normalize_ranges(ranges: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
 def split_with_gap_aware(
     image: np.ndarray, rows: int, cols: int
 ) -> Tuple[List[Patch], List[Tuple[int, int]], List[Tuple[int, int]]]:
-    """Split image into patches while being robust to visible gap seams."""
+#     """Split image into equal-sized patches (no gap detection).
+
+#     Simply divides the image into rows x cols equal blocks.
+#     Returns empty lists for row_ranges and col_ranges to maintain API compatibility.
+#     """
+#     height, width, _ = image.shape
+#     patch_h = height // rows
+#     patch_w = width // cols
+
+#     patches: List[Patch] = []
+#     index = 0
+#     for r in range(rows):
+#         y0 = r * patch_h
+#         y1 = y0 + patch_h
+#         for c in range(cols):
+#             x0 = c * patch_w
+#             x1 = x0 + patch_w
+#             patch_img = image[y0:y1, x0:x1, :].copy()
+#             patches.append(Patch.from_image(patch_img, original_index=index))
+#             index += 1
+
+#     # Return empty ranges to maintain API compatibility
+#     empty_ranges: List[Tuple[int, int]] = []
+#     return patches, empty_ranges, empty_ranges
+
+
+# def split_with_gap_aware_original(
+#     image: np.ndarray, rows: int, cols: int
+# ) -> Tuple[List[Patch], List[Tuple[int, int]], List[Tuple[int, int]]]:
+#     """Split image into patches while being robust to visible gap seams.
+
+#     This is the original implementation that detects gap seams.
+#     """
     gray = (
         cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         if cv2 is not None

@@ -123,20 +123,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--solver",
         type=str,
-        default="default",
+        default="gaps",
         choices=["default", "gaps"],
         help="Solver algorithm to use (default or gaps)",
     )
     parser.add_argument(
         "--border-width",
         type=int,
-        default=1,
+        default=20,
         help="Number of edge pixels to use for dissimilarity in gaps solver (default: 1)",
     )
     parser.add_argument(
         "--robust-method",
         type=str,
-        default="mse",
+        default="median",
         choices=["mse", "median", "percentile", "huber"],
         help="Robust dissimilarity method for gaps solver (default: mse)",
     )

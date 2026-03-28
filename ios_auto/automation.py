@@ -390,7 +390,7 @@ if __name__ == "__main__":
     parser.add_argument("--test-offline", type=Path, help="Test without device")
     parser.add_argument("--grid", type=lambda x: tuple(map(int, x.split("x"))), default=(8, 8))
     parser.add_argument("--solver", default="gaps", choices=["default", "gaps"])
-    parser.add_argument("--border-width", type=int, default=10, help="Border width for gaps solver (default: 10)")
+    parser.add_argument("--border-width", type=int, default=25, help="Border width for gaps solver (default: 10)")
     parser.add_argument("--robust-method", default="median", choices=["mse", "median", "percentile", "huber"],
                         help="Robust method for gaps solver (default: median)")
     parser.add_argument("--output", type=Path, default=Path("ios_auto_output"))
