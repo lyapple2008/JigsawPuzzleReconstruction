@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>拼图游戏 - Jigsaw Puzzle</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>拼图游戏</h1>
+            <div class="controls">
+                <label>
+                    网格大小:
+                    <select id="gridSize">
+                        <option value="6" selected>6 × 6</option>
+                        <option value="7">7 × 7</option>
+                        <option value="8">8 × 8</option>
+                    </select>
+                </label>
+                <button id="btnNewGame">新游戏</button>
+                <button id="btnUpload">上传图片</button>
+                <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                <button id="btnReset">重置</button>
+                <button id="btnUndo">撤销</button>
+            </div>
+        </header>
+
+        <div class="game-area">
+            <canvas id="puzzleCanvas"></canvas>
+        </div>
+        <div class="hint">拖动拼图块进行交换 | 相邻且位置正确的块自动融合为整体</div>
+
+        <footer>
+            <div class="stats">
+                <span>步数: <strong id="moveCount">0</strong></span>
+                <span>正确率: <strong id="accuracy">0%</strong></span>
+                <span>时间: <strong id="timer">00:00</strong></span>
+            </div>
+            <div id="message" class="message"></div>
+        </footer>
+    </div>
+
+    <script src="/static/puzzle_game.js"></script>
+</body>
+</html>

@@ -209,3 +209,7 @@ __marimo__/
 
 # datasets
 datasets/
+
+.DS_Store
+
+WebDriverAgent/
