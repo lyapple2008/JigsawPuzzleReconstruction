@@ -14,8 +14,6 @@ import argparse
 import base64
 import io
 import json
-import signal
-import socket
 import sys
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -157,20 +155,24 @@ def main() -> None:
 
     server = ReusableHTTPServer(("0.0.0.0", args.port), PuzzleHTTPHandler)
 
-    def _shutdown(signum, frame):
-        print("\nShutting down.")
-        server.shutdown()
+    # Run serve_forever in a daemon thread so the main thread can handle
+    # KeyboardInterrupt without deadlocking inside server.shutdown().
+    import threading
 
-    signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
 
     print(f"Puzzle game server running at http://localhost:{args.port}")
     print("Press Ctrl+C to stop")
     try:
-        server.serve_forever()
+        while server_thread.is_alive():
+            server_thread.join(timeout=1)
     except KeyboardInterrupt:
+        pass
+    finally:
         print("\nShutting down.")
         server.shutdown()
+        server.server_close()
 
 
 if __name__ == "__main__":

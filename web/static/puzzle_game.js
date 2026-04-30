@@ -53,7 +53,6 @@ class PuzzleGame {
         this.dragPos = null;     // 当前鼠标位置 { x, y } (canvas坐标)
         this.isDragging = false;
         this.dragGroup = null;   // 被拖拽的组的所有cellId列表
-        this.dragGroupRect = null; // 被拖拽组的包围盒 { r, c, h, w }
 
         this._bindEvents();
     }
@@ -71,6 +70,7 @@ class PuzzleGame {
         this.patchH = patchH;
 
         this.pieces = [];
+        this._pieceCanvasCache = [];
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = patchW;
         tempCanvas.height = patchH;
@@ -80,11 +80,18 @@ class PuzzleGame {
             for (let c = 0; c < cols; c++) {
                 tempCtx.clearRect(0, 0, patchW, patchH);
                 tempCtx.drawImage(img, c * patchW, r * patchH, patchW, patchH, 0, 0, patchW, patchH);
+                const imgData = tempCtx.getImageData(0, 0, patchW, patchH);
                 this.pieces.push({
-                    image: tempCtx.getImageData(0, 0, patchW, patchH),
+                    image: imgData,
                     originalRow: r,
                     originalCol: c,
                 });
+                // 预缓存离屏canvas
+                const cached = document.createElement('canvas');
+                cached.width = patchW;
+                cached.height = patchH;
+                cached.getContext('2d').putImageData(imgData, 0, 0);
+                this._pieceCanvasCache.push(cached);
             }
         }
 
@@ -112,25 +119,28 @@ class PuzzleGame {
     _rebuildMerges() {
         const { rows, cols, grid, pieces } = this;
         const n = rows * cols;
+        const oldUf = this.uf;
+
         this.uf = new UnionFind(n);
 
-        // 检查所有相邻对，如果都在正确位置且原图中也相邻则合并
+        // 合并条件：网格中相邻 + 原图中也相邻（同方向），不要求在绝对正确位置
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
                 const piece = pieces[grid[r][c]];
-                if (piece.originalRow !== r || piece.originalCol !== c) continue;
 
-                // 右邻居
+                // 右邻居：当前在左边，原图中也应在左边（originalCol 差 1）
                 if (c + 1 < cols) {
                     const rightPiece = pieces[grid[r][c + 1]];
-                    if (rightPiece.originalRow === r && rightPiece.originalCol === c + 1) {
+                    if (piece.originalRow === rightPiece.originalRow &&
+                        piece.originalCol - rightPiece.originalCol === -1) {
                         this.uf.union(this._cellId(r, c), this._cellId(r, c + 1));
                     }
                 }
-                // 下邻居
+                // 下邻居：当前在上边，原图中也应在上边（originalRow 差 1）
                 if (r + 1 < rows) {
                     const downPiece = pieces[grid[r + 1][c]];
-                    if (downPiece.originalRow === r + 1 && downPiece.originalCol === c) {
+                    if (piece.originalCol === downPiece.originalCol &&
+                        piece.originalRow - downPiece.originalRow === -1) {
                         this.uf.union(this._cellId(r, c), this._cellId(r + 1, c));
                     }
                 }
@@ -145,6 +155,31 @@ class PuzzleGame {
                 this.cellToGroup[id] = this.uf.find(id);
             }
         }
+
+        // 只要有合并组（size > 1）就触发融合动画
+        const roots = new Set();
+        for (let i = 0; i < n; i++) roots.add(this.uf.find(i));
+        if (roots.size < n) {
+            this._animateMerge();
+        }
+    }
+
+    _animateMerge() {
+        const duration = 1000;
+        const start = performance.now();
+
+        const animate = (now) => {
+            const elapsed = now - start;
+            const progress = Math.min(elapsed / duration, 1);
+            this._mergeAnimProgress = progress;
+            this.render();
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                this._mergeAnimProgress = null;
+            }
+        };
+        requestAnimationFrame(animate);
     }
 
     _getGroup(r, c) {
@@ -207,49 +242,66 @@ class PuzzleGame {
         this.render();
     }
 
-    // 尝试交换两个组（多格 <-> 多格）
-    _trySwapGroups(srcCells, targetR, targetC) {
-        const srcBBox = this._getGroupBBox(srcCells);
+    // 交换组内实际cell到目标位置（anchorR,anchorC为点击的cell，作为偏移锚点）
+    // 使用临时缓冲区：先保存所有源位置的值，再写入目标，最后将被置换块填入空出的源位置
+    _trySwapGroups(srcCells, anchorR, anchorC, targetR, targetC) {
         const srcCellSet = new Set(srcCells);
 
-        // 收集目标区域所有cell (从targetR,targetC开始，按srcBBox的h×w扩展)
-        const tgtCells = [];
-        for (let dr = 0; dr < srcBBox.h; dr++) {
-            for (let dc = 0; dc < srcBBox.w; dc++) {
-                const tr = targetR + dr, tc = targetC + dc;
-                if (tr < 0 || tr >= this.rows || tc < 0 || tc >= this.cols) return false;
-                const tid = this._cellId(tr, tc);
-                if (srcCellSet.has(tid)) return false; // 目标区域与源重叠
-                tgtCells.push(tid);
-            }
+        // 以点击cell为锚点计算每个cell的目标位置
+        const moves = []; // { srcId, tgtId }
+        for (const id of srcCells) {
+            const [r, c] = this._cellRC(id);
+            const dr = r - anchorR, dc = c - anchorC;
+            const tr = targetR + dr, tc = targetC + dc;
+            if (tr < 0 || tr >= this.rows || tc < 0 || tc >= this.cols) return false;
+            const tid = this._cellId(tr, tc);
+            if (tid === id) continue; // 自身位置，跳过
+            moves.push({ srcId: id, tgtId: tid });
         }
-
-        // 收集源区域cell (按BBox内位置顺序)
-        const srcOrdered = [];
-        for (let dr = 0; dr < srcBBox.h; dr++) {
-            for (let dc = 0; dc < srcBBox.w; dc++) {
-                srcOrdered.push(this._cellId(srcBBox.r + dr, srcBBox.c + dc));
-            }
-        }
-
-        if (srcOrdered.length !== tgtCells.length) return false;
 
         // 保存快照用于撤销
         const gridSnap = this.grid.map(row => [...row]);
         const mergeSnap = { ...this.cellToGroup };
 
-        // 执行交换: srcOrdered[i] <-> tgtCells[i]
-        for (let i = 0; i < srcOrdered.length; i++) {
-            const [sr, sc] = this._cellRC(srcOrdered[i]);
-            const [tr, tc] = this._cellRC(tgtCells[i]);
-            const tmp = this.grid[sr][sc];
-            this.grid[sr][sc] = this.grid[tr][tc];
-            this.grid[tr][tc] = tmp;
+        // 1. 用临时缓冲区保存所有源位置的值
+        const savedValues = new Map();
+        for (const { srcId } of moves) {
+            const [sr, sc] = this._cellRC(srcId);
+            savedValues.set(srcId, this.grid[sr][sc]);
         }
+
+        // 2. 收集被置换块（目标位置不在融合块范围内的块）
+        const displacedPieces = [];
+        for (const { tgtId } of moves) {
+            if (!srcCellSet.has(tgtId)) {
+                const [tr, tc] = this._cellRC(tgtId);
+                displacedPieces.push(this.grid[tr][tc]);
+            }
+        }
+
+        // 3. 将源块写入目标位置
+        for (const { srcId, tgtId } of moves) {
+            const [tr, tc] = this._cellRC(tgtId);
+            this.grid[tr][tc] = savedValues.get(srcId);
+        }
+
+        // 4. 将被置换块填入空出的源位置
+        //    条件：该源位置没有被其他组成员的目标位置覆盖
+        //    即没有其他move的tgtId等于当前srcId
+        const filledByGroup = new Set(moves.map(m => m.tgtId));
+        let dispIdx = 0;
+        for (const { srcId } of moves) {
+            if (!filledByGroup.has(srcId) && dispIdx < displacedPieces.length) {
+                const [sr, sc] = this._cellRC(srcId);
+                this.grid[sr][sc] = displacedPieces[dispIdx];
+                dispIdx++;
+            }
+        }
+
+        this._rebuildMerges();
 
         this.history.push({ gridSnapshot: gridSnap, mergeSnapshot: mergeSnap });
         this.moveCount++;
-        this._rebuildMerges();
         this.onStateChange();
         this.render();
 
@@ -285,33 +337,17 @@ class PuzzleGame {
         return true;
     }
 
-    // 交换: 拖拽源组到目标位置
-    swapGroupToTarget(srcCells, targetR, targetC) {
+    // 交换: 拖拽源组到目标位置，anchorR/anchorC为点击的cell
+    // 融合块拖到单块: 整个融合块移到目标区域，单块被置换到源区域
+    // 融合块拖到另一融合块: 逐块交换，目标块从其融合组中分割出来
+    swapGroupToTarget(srcCells, anchorR, anchorC, targetR, targetC) {
         if (this.solved) return;
-        const srcBBox = this._getGroupBBox(srcCells);
-        const srcSize = srcCells.length;
-
-        // 检查目标区域大小
-        const tgtCells = [];
-        const srcCellSet = new Set(srcCells);
-        for (let dr = 0; dr < srcBBox.h; dr++) {
-            for (let dc = 0; dc < srcBBox.w; dc++) {
-                const tr = targetR + dr, tc = targetC + dc;
-                if (tr < 0 || tr >= this.rows || tc < 0 || tc >= this.cols) return;
-                const tid = this._cellId(tr, tc);
-                if (srcCellSet.has(tid)) return;
-                tgtCells.push(tid);
-            }
-        }
-
-        if (tgtCells.length === srcSize) {
-            this._trySwapGroups(srcCells, targetR, targetC);
-        } else if (srcSize === 1) {
-            // 源是单格，目标也是单格
+        if (srcCells.length === 1) {
             const [sr, sc] = this._cellRC(srcCells[0]);
             this._swapSingle(sr, sc, targetR, targetC);
+        } else {
+            this._trySwapGroups(srcCells, anchorR, anchorC, targetR, targetC);
         }
-        // 其他大小不匹配的情况不做交换
     }
 
     swapPieces(posA, posB) {
@@ -322,11 +358,11 @@ class PuzzleGame {
 
         const srcCells = this._getGroup(r1, c1);
         if (srcCells.length > 1) {
-            this.swapGroupToTarget(srcCells, r2, c2);
+            this.swapGroupToTarget(srcCells, r1, c1, r2, c2);
         } else {
             const tgtCells = this._getGroup(r2, c2);
             if (tgtCells.length > 1) {
-                this.swapGroupToTarget(tgtCells, r1, c1);
+                this.swapGroupToTarget(tgtCells, r2, c2, r1, c1);
             } else {
                 this._swapSingle(r1, c1, r2, c2);
             }
@@ -384,15 +420,27 @@ class PuzzleGame {
     }
 
     getPositionAccuracy() {
+        const { rows, cols, pieces, grid } = this;
         let correct = 0;
-        const total = this.rows * this.cols;
-        for (let r = 0; r < this.rows; r++) {
-            for (let c = 0; c < this.cols; c++) {
-                const piece = this.pieces[this.grid[r][c]];
-                if (piece.originalRow === r && piece.originalCol === c) correct++;
+        let total = 0;
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const p1 = pieces[grid[r][c]];
+                // 右边
+                if (c + 1 < cols) {
+                    total++;
+                    const p2 = pieces[grid[r][c + 1]];
+                    if (p1.originalRow === p2.originalRow && Math.abs(p1.originalCol - p2.originalCol) === 1) correct++;
+                }
+                // 下边
+                if (r + 1 < rows) {
+                    total++;
+                    const p2 = pieces[grid[r + 1][c]];
+                    if (p1.originalCol === p2.originalCol && Math.abs(p1.originalRow - p2.originalRow) === 1) correct++;
+                }
             }
         }
-        return correct / total;
+        return total > 0 ? correct / total : 0;
     }
 
     // === 渲染 ===
@@ -424,24 +472,11 @@ class PuzzleGame {
         const x = c * patchW;
         const y = r * patchH;
 
-        const tmpCanvas = document.createElement('canvas');
-        tmpCanvas.width = patchW;
-        tmpCanvas.height = patchH;
-        tmpCanvas.getContext('2d').putImageData(piece.image, 0, 0);
-
         if (isGhost) {
             ctx.globalAlpha = 0.5;
         }
-        ctx.drawImage(tmpCanvas, x, y);
+        ctx.drawImage(this._pieceCanvasCache[pieceIdx], x, y);
         ctx.globalAlpha = 1.0;
-
-        // 正确位置绿点
-        if (piece.originalRow === r && piece.originalCol === c) {
-            ctx.fillStyle = 'rgba(83, 215, 105, 0.7)';
-            ctx.beginPath();
-            ctx.arc(x + 12, y + 12, 6, 0, Math.PI * 2);
-            ctx.fill();
-        }
 
         // 网格线
         ctx.strokeStyle = 'rgba(255,255,255,0.15)';
@@ -450,49 +485,43 @@ class PuzzleGame {
     }
 
     _drawMergeBorders() {
-        const { ctx, rows, cols, patchW, patchH } = this;
-        const drawn = new Set();
+        const { ctx, rows, cols, patchW, patchH, pieces, grid } = this;
+        const animP = this._mergeAnimProgress; // null if not animating
+        const alpha = animP !== null ? 0.9 * animP : 0.9;
 
+        ctx.strokeStyle = `rgba(83, 215, 105, ${alpha})`;
+        ctx.lineWidth = 3;
+
+        // 判断两个cell中的piece在原图中是否相邻
+        const _originallyAdjacent = (r1, c1, r2, c2) => {
+            const p1 = pieces[grid[r1][c1]], p2 = pieces[grid[r2][c2]];
+            if (r1 === r2 && Math.abs(c1 - c2) === 1) {
+                return p1.originalRow === p2.originalRow && Math.abs(p1.originalCol - p2.originalCol) === 1;
+            }
+            if (c1 === c2 && Math.abs(r1 - r2) === 1) {
+                return p1.originalCol === p2.originalCol && Math.abs(p1.originalRow - p2.originalRow) === 1;
+            }
+            return false;
+        };
+
+        // 遍历所有相邻边，原图中相邻的边不高亮，其余都高亮
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
-                const id = this._cellId(r, c);
-                const gid = this.uf.find(id);
-                if (drawn.has(gid)) continue;
-                drawn.add(gid);
-
-                const cells = this._getGroup(r, c);
-                if (cells.length <= 1) continue;
-
-                // 绘制组外边框
-                const bbox = this._getGroupBBox(cells);
-                const x = bbox.c * patchW;
-                const y = bbox.r * patchH;
-                const w = bbox.w * patchW;
-                const h = bbox.h * patchH;
-
-                ctx.strokeStyle = 'rgba(83, 215, 105, 0.9)';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
-
-                // 隐藏组内网格线：在组内相邻边界画背景色线
-                ctx.strokeStyle = 'rgba(26, 26, 46, 0.8)'; // 背景色
-                ctx.lineWidth = 2;
-                for (const cid of cells) {
-                    const [cr, cc] = this._cellRC(cid);
-                    // 检查右邻居是否同组
-                    if (cc + 1 < cols && this.uf.find(this._cellId(cr, cc + 1)) === gid) {
-                        ctx.beginPath();
-                        ctx.moveTo((cc + 1) * patchW, cr * patchH);
-                        ctx.lineTo((cc + 1) * patchW, (cr + 1) * patchH);
-                        ctx.stroke();
-                    }
-                    // 检查下邻居是否同组
-                    if (cr + 1 < rows && this.uf.find(this._cellId(cr + 1, cc)) === gid) {
-                        ctx.beginPath();
-                        ctx.moveTo(cc * patchW, (cr + 1) * patchH);
-                        ctx.lineTo((cc + 1) * patchW, (cr + 1) * patchH);
-                        ctx.stroke();
-                    }
+                // 右边
+                if (c + 1 < cols && !_originallyAdjacent(r, c, r, c + 1)) {
+                    const x = (c + 1) * patchW;
+                    ctx.beginPath();
+                    ctx.moveTo(x, r * patchH);
+                    ctx.lineTo(x, (r + 1) * patchH);
+                    ctx.stroke();
+                }
+                // 下边
+                if (r + 1 < rows && !_originallyAdjacent(r, c, r + 1, c)) {
+                    const y = (r + 1) * patchH;
+                    ctx.beginPath();
+                    ctx.moveTo(c * patchW, y);
+                    ctx.lineTo((c + 1) * patchW, y);
+                    ctx.stroke();
                 }
             }
         }
@@ -500,50 +529,37 @@ class PuzzleGame {
 
     _drawDragGhost() {
         const { ctx, patchW, patchH, dragGroup, dragPos, dragStart } = this;
-        const bbox = this._getGroupBBox(dragGroup);
 
-        // 计算拖拽偏移（鼠标当前位置 - 拖拽起点）
-        const startX = dragStart.col * patchW + patchW / 2;
-        const startY = dragStart.row * patchH + patchH / 2;
-        const dx = dragPos.x - startX;
-        const dy = dragPos.y - startY;
+        // 拖拽偏移：以点击的cell为锚点
+        const anchorX = dragStart.col * patchW;
+        const anchorY = dragStart.row * patchH;
+        const dx = dragPos.x - anchorX - patchW / 2;
+        const dy = dragPos.y - anchorY - patchH / 2;
 
         ctx.save();
-        ctx.globalAlpha = 0.4;
 
         // 在原位画半透明（表示离开的位置）
+        ctx.globalAlpha = 0.4;
         for (const id of dragGroup) {
             const [r, c] = this._cellRC(id);
             const pieceIdx = this.grid[r][c];
-            const piece = this.pieces[pieceIdx];
-            const tmpCanvas = document.createElement('canvas');
-            tmpCanvas.width = patchW;
-            tmpCanvas.height = patchH;
-            tmpCanvas.getContext('2d').putImageData(piece.image, 0, 0);
-            ctx.drawImage(tmpCanvas, c * patchW, r * patchH);
+            ctx.drawImage(this._pieceCanvasCache[pieceIdx], c * patchW, r * patchH);
         }
 
-        // 在鼠标位置画拖拽中的组
+        // 在鼠标位置画拖拽中的组（只画实际cell，不画bbox空洞）
         ctx.globalAlpha = 0.7;
-        const ox = bbox.c * patchW + dx;
-        const oy = bbox.r * patchH + dy;
         for (const id of dragGroup) {
             const [r, c] = this._cellRC(id);
             const pieceIdx = this.grid[r][c];
-            const piece = this.pieces[pieceIdx];
-            const tmpCanvas = document.createElement('canvas');
-            tmpCanvas.width = patchW;
-            tmpCanvas.height = patchH;
-            tmpCanvas.getContext('2d').putImageData(piece.image, 0, 0);
-            const px = ox + (c - bbox.c) * patchW;
-            const py = oy + (r - bbox.r) * patchH;
-            ctx.drawImage(tmpCanvas, px, py);
-        }
+            const px = c * patchW + dx;
+            const py = r * patchH + dy;
+            ctx.drawImage(this._pieceCanvasCache[pieceIdx], px, py);
 
-        // 拖拽组边框
-        ctx.strokeStyle = '#4a90d9';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(ox, oy, bbox.w * patchW, bbox.h * patchH);
+            // 每个cell的蓝色边框
+            ctx.strokeStyle = '#4a90d9';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(px, py, patchW, patchH);
+        }
 
         ctx.restore();
     }
@@ -584,7 +600,6 @@ class PuzzleGame {
         this.dragStart = pos;
         this.isDragging = false;
         this.dragGroup = this._getGroup(pos.row, pos.col);
-        this.dragGroupRect = this._getGroupBBox(this.dragGroup);
     }
 
     _onPointerMove(e) {
@@ -597,21 +612,15 @@ class PuzzleGame {
     _onPointerUp(e) {
         if (this.dragStart && this.isDragging) {
             const pos = this._getGridPos(e);
-            if (pos) {
-                const bbox = this.dragGroupRect;
-                const isSameGroup = this.dragGroup.includes(this._cellId(pos.row, pos.col));
-
-                if (!isSameGroup && (pos.row !== this.dragStart.row || pos.col !== this.dragStart.col)) {
-                    // 目标位置作为新区域的左上角
-                    this.swapGroupToTarget(this.dragGroup, pos.row, pos.col);
-                }
+            if (pos && (pos.row !== this.dragStart.row || pos.col !== this.dragStart.col)) {
+                // 以点击cell为锚点，目标位置为放下位置
+                this.swapGroupToTarget(this.dragGroup, this.dragStart.row, this.dragStart.col, pos.row, pos.col);
             }
         }
         this.dragStart = null;
         this.isDragging = false;
         this.dragPos = null;
         this.dragGroup = null;
-        this.dragGroupRect = null;
         this.render();
     }
 
@@ -706,7 +715,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('btnReset').addEventListener('click', () => {
-        if (game.pieces.length > 0) { game.shuffle(game.moveCount || 42); updateStats(); }
+        if (game.pieces.length > 0) { game.shuffle(Date.now() % 10000); updateStats(); }
     });
 
     document.getElementById('btnUndo').addEventListener('click', () => { game.undo(); updateStats(); });
